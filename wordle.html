@@ -183,12 +183,13 @@ const VALID="aahedaaliiaapasaarghaartiabacaabaciabackabacsabaftabahtabakaabampab
     renderRow(guesses.length - 1, g, states, true);
     busy = true;
     won = g === answer; over = won || guesses.length >= ROWS;
+    if (over && mode === 'daily') recordStats(); // count it now, together with the saved guesses (not after the animation)
     persist();
     setTimeout(() => {
       busy = false; paintKeys();
       if (won) { [...rowsEl[guesses.length - 1].children].forEach((t, i) => { t.style.animationDelay = (i * 0.08) + 's'; t.classList.add('win'); }); toast(['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew'][guesses.length - 1]); }
       else if (over) toast(answer.toUpperCase(), 2500);
-      if (over) { if (mode === 'daily') { recordStats(); ping(); } setTimeout(() => openModal(), won ? 1500 : 1800); }
+      if (over) setTimeout(() => openModal(), won ? 1500 : 1800);
     }, COLS * 250 + 300);
   }
 
@@ -202,7 +203,8 @@ const VALID="aahedaaliiaapasaarghaartiabacaabaciabackabacsabaftabahtabakaabampab
     ping();
   }
   function recordStats() {
-    const s = load('stats', { played: 0, wins: 0, streak: 0, maxStreak: 0, dist: [0, 0, 0, 0, 0, 0], last: null, lastWin: null });
+    const s = Object.assign({ played: 0, wins: 0, streak: 0, maxStreak: 0, dist: [0, 0, 0, 0, 0, 0], last: null, lastWin: null }, load('stats', null) || {});
+    if (!Array.isArray(s.dist) || s.dist.length !== 6) s.dist = [0, 0, 0, 0, 0, 0];
     if (s.last === today) return; // already counted
     s.played++; s.last = today;
     if (won) {
@@ -242,6 +244,7 @@ const VALID="aahedaaliiaapasaarghaartiabacaabaciabackabacsabaftabahtabakaabampab
     const st = load('daily', null);
     guesses = st && st.date === today && Array.isArray(st.guesses) ? st.guesses.filter(g => typeof g === 'string' && g.length === 5).slice(0, 6) : [];
     cur = ''; won = guesses.includes(answer); over = won || guesses.length >= ROWS;
+    if (over) recordStats(); // repair: a finished daily restored from storage must be counted (no-op if it already was)
     renderAll(); persist();
   }
   function startPractice(word) {

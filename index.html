@@ -131,6 +131,22 @@
   .sys{align-self:center;color:var(--muted);font-size:12px;text-align:center}
   form#send{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}
   form#send button{padding:10px 14px}
+  .ovl{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);align-items:flex-end;justify-content:center}
+  .ovl.on{display:flex}
+  .sheet{background:var(--panel);border:1px solid var(--border);border-radius:14px 14px 0 0;width:100%;max-width:440px;max-height:88%;overflow-y:auto;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
+  @media (min-width:861px){ .ovl{align-items:center} .sheet{border-radius:14px;padding-bottom:16px} }
+  .pkHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:16px}
+  .pkPrev{margin-bottom:12px}
+  .pkPrev .scard{width:100%}
+  .rrow{display:flex;gap:6px;align-items:stretch}
+  .rrow .roomItem{flex:1;min-width:0}
+  .rrow .fg{flex:none;font-size:12px}
+  .roomItem.sel{border-color:var(--accent);background:#1f1f0f}
+  .pkCode{display:flex;gap:6px;margin:2px 0 4px}
+  .pkCode button{white-space:nowrap;padding:8px 12px}
+  .toast2{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;background:var(--panel);border:1px solid var(--accent);color:var(--text);border-radius:10px;padding:8px 10px 8px 14px;display:none;align-items:center;gap:10px;font-size:13px;max-width:92%}
+  .toast2.on{display:flex}
+  .toast2 button{padding:5px 10px;font-size:12px;white-space:nowrap;flex:none}
   #roomsPane{display:none;border-bottom:1px solid var(--border);max-height:55%;overflow-y:auto;padding:12px}
   #roomsPane.on{display:block}
   #roomsPane .sect:first-child{margin-top:0}
@@ -219,6 +235,19 @@
   </aside>
 </div>
 
+<div class="ovl" id="picker" role="dialog" aria-modal="true" aria-labelledby="pkTitle"><div class="sheet">
+  <div class="pkHead"><b id="pkTitle">Share stats to…</b><button class="link" id="pkClose" type="button">Close</button></div>
+  <div class="pkPrev" id="pkPrev"></div>
+  <div class="field" id="pkNameF"><label for="pkName">Your name</label><input id="pkName" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh"></div>
+  <div class="sectH"><span>My rooms</span></div>
+  <div class="rooms" id="pkMine"></div>
+  <div class="sect"><div class="sectH"><span>Public rooms</span></div><div class="rooms" id="pkPub"><div class="empty">Loading…</div></div></div>
+  <div class="err" id="pkErr"></div>
+  <button class="link" id="pkNew" type="button">Join or create another room…</button>
+  <p class="sub" style="margin:10px 0 0">Private rooms you've joined in this browser remember their key here (never sent anywhere), so you won't be asked for the code again. "Forget" removes it.</p>
+</div></div>
+<div class="toast2" id="toast2" role="status"><span id="t2text"></span><button id="t2go" type="button">Go to room</button></div>
+
 <nav class="tabs" id="tabs" aria-label="Views">
   <button type="button" data-tab="chat" class="on"><span class="ic">💬</span>Chat<span class="badge" id="tabBadge"></span></button>
   <button type="button" data-tab="wordle"><span class="ic">🔤</span>Wordle</button>
@@ -271,14 +300,27 @@
     : APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + r))).slice(0, 32);
 
   // Public rooms use a key derived from the room name only (anyone can join; it just keeps the relay from reading along).
-  async function deriveKey(room, code, pub) {
+  async function deriveKey(room, code, pub, extractable = false) {
     const base = await crypto.subtle.importKey('raw', enc.encode(pub ? 'offsuit-public-room' : code), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode((pub ? 'offsuit-rtchat/pub/v1/' : 'offsuit-rtchat/v1/') + room), iterations: pub ? 20000 : 200000, hash: 'SHA-256' },
-      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      base, { name: 'AES-GCM', length: 256 }, extractable, ['encrypt', 'decrypt']);
   }
-  async function seal(obj) {
+  // Remembered keys for private rooms (this browser only, never published). Keyed "priv:<room>".
+  const KEYS_LS = 'chat-keys-v1';
+  function savedKeys() { try { const o = JSON.parse(localStorage.getItem(KEYS_LS) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
+  const hasSavedKey = r => typeof savedKeys()['priv:' + r] === 'string';
+  async function rememberKey(r, k) {
+    try { const o = savedKeys(); o['priv:' + r] = b64(await crypto.subtle.exportKey('raw', k)); localStorage.setItem(KEYS_LS, JSON.stringify(o)); } catch {}
+  }
+  function forgetKey(r) { const o = savedKeys(); delete o['priv:' + r]; localStorage.setItem(KEYS_LS, JSON.stringify(o)); }
+  async function keyFor(r, pub) {
+    if (pub) return deriveKey(r, '', true);
+    const raw = savedKeys()['priv:' + r]; if (!raw) return null;
+    try { return await crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']); } catch { return null; }
+  }
+  async function seal(obj, k = key) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, enc.encode(JSON.stringify(obj)));
     return JSON.stringify({ v: 1, iv: b64(iv), ct: b64(ct) });
   }
   // returns object, or null if not our format, or false if it is our format but the key is wrong
@@ -465,6 +507,11 @@
     localStorage.setItem('chat-rooms-v2', JSON.stringify(Object.fromEntries(keep)));
   }
 
+  function forgetRoom(r, pub) {
+    if (!pub) forgetKey(r);
+    const all = myRooms(); delete all[roomKey(r, pub)]; localStorage.setItem('chat-rooms-v2', JSON.stringify(all));
+  }
+
   // ---- public directory (public, code-free rooms only) ----
   async function announce() {
     if (!room || !isPublic) return;
@@ -512,7 +559,14 @@
       .map(([k, m]) => [k.slice(k.indexOf(':') + 1), k.startsWith('pub:'), m]).filter(([r]) => validRoom(r));
     const my = $('myRooms'); my.textContent = '';
     if (!mine.length) my.innerHTML = '<div class="empty">Rooms you join appear here.</div>';
-    const btns = mine.map(([r, pub, m]) => { const b = roomButton(r, pub, { text: pub ? 'public' : 'private' }); my.appendChild(b); return [r, pub, m, b]; });
+    const btns = mine.map(([r, pub, m]) => {
+      const b = roomButton(r, pub, { text: pub ? 'public' : 'private' });
+      const row = document.createElement('div'); row.className = 'rrow';
+      const fg = document.createElement('button'); fg.type = 'button'; fg.className = 'link fg'; fg.textContent = 'Forget';
+      fg.title = pub ? 'Remove from My rooms' : 'Remove from My rooms and forget the saved room key';
+      fg.addEventListener('click', () => { forgetRoom(r, pub); renderRooms(); });
+      row.append(b, fg); my.appendChild(row); return [r, pub, m, b];
+    });
     loadDirectory().then(list => {
       if (seq !== renderSeq) return;
       const el = $('pubRooms'); el.textContent = '';
@@ -537,7 +591,7 @@
   function syncCodeField() {
     const pub = $('listPublic').checked;
     $('codeField').style.display = pub ? 'none' : '';
-    $('code').required = !pub;
+    $('code').required = false;
     $('typeHint').textContent = pub ? 'Public: anyone can join from the list and read the chat. No code.' : 'Private: needs the room code, end-to-end encrypted, never listed.';
   }
   $('listPublic').addEventListener('change', syncCodeField);
@@ -549,7 +603,7 @@
     $('roomIn').value = r; $('listPublic').checked = !!pub; syncCodeField();
     $('err').textContent = '';
     setPanel(true);
-    if (pub && clean($('name').value)) { $('joinForm').requestSubmit(); return; } // public: join straight away
+    if ((pub || hasSavedKey(r)) && clean($('name').value)) { $('joinForm').requestSubmit(); return; } // public or remembered key: join straight away
     (clean($('name').value) ? $('code') : $('name')).focus();
   }
   $('roomsBtn').addEventListener('click', () => {
@@ -614,27 +668,28 @@
     if (!isMine(m) && live) onIncoming(m);
   }
 
-  async function publish(obj) {
-    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: await seal(Object.assign({ pub: isPublic }, obj)) }) });
+  async function publish(obj) { return publishTo(topic, key, isPublic, obj); }
+  async function publishTo(t, k, pub, obj) {
+    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: t, message: await seal(Object.assign({ pub }, obj), k) }) });
     if (!r.ok) throw new Error(r.status === 429 ? 'Rate limited by the free relay — wait a moment.' : 'Send failed (' + r.status + ')');
   }
 
   // Validate the code against the room's recent (encrypted) history.
   // 'ok' = at least one message decrypts; 'wrong' = room has encrypted messages but none decrypt; 'new' = room empty.
-  async function checkCode(k) {
-    let res = await checkCodeOnce(k);
+  async function checkCode(k, t = topic, track = true) {
+    let res = await checkCodeOnce(k, t, track);
     for (const wait of [1500, 2500]) {
       if (res.state !== 'new') break;
-      await new Promise(r => setTimeout(r, wait)); res = await checkCodeOnce(k);
+      await new Promise(r => setTimeout(r, wait)); res = await checkCodeOnce(k, t, track);
     }
     return res;
   }
-  async function checkCodeOnce(k) {
-    const r = await fetch(RELAY + '/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
+  async function checkCodeOnce(k, t = topic, track = true) {
+    const r = await fetch(RELAY + '/' + t + '/json?poll=1&since=12h', { cache: 'no-store' });
     if (!r.ok) throw new Error('Could not reach the chat relay (' + r.status + '). Try again.');
     const lines = (await r.text()).split('\n').filter(Boolean);
-    let ours = 0; historyIds.clear();
-    lines.forEach(l => { try { historyIds.add(JSON.parse(l).id); } catch {} });
+    let ours = 0;
+    if (track) { historyIds.clear(); lines.forEach(l => { try { historyIds.add(JSON.parse(l).id); } catch {} }); }
     for (const line of lines.reverse()) {
       let n; try { n = JSON.parse(line); } catch { continue; }
       if (n.event !== 'message') continue;
@@ -668,16 +723,24 @@
     const roomRaw = clean($('roomIn').value), code = $('code').value;
     if (!newName) { $('err').textContent = 'Please enter your name.'; $('name').focus(); return; }
     if (!roomRaw) { $('err').textContent = 'Please enter a room.'; return; }
-    if (!pubRoom && !code) { $('err').textContent = 'Please enter the room code.'; return; }
     const r = slug(roomRaw);
+    const useSaved = !pubRoom && !code && hasSavedKey(r);
+    if (!pubRoom && !code && !useSaved) { $('err').textContent = 'Please enter the room code.'; $('code').focus(); return; }
     initAudio(); if (notifyOn) askPermission().then(() => { if (key) renderBell(); }); // inside the click gesture
     const btn = $('joinBtn'); btn.disabled = true; btn.textContent = pubRoom ? 'Joining…' : 'Checking code…';
     try {
       topic = await topicFor(r, pubRoom);
-      const k = await deriveKey(r, code, pubRoom);
+      const k = useSaved ? await keyFor(r, false) : await deriveKey(r, code, pubRoom, !pubRoom);
+      if (!k) throw new Error('Please enter the room code.');
       // public rooms: no code to check; the poll only fills history (no alerts for old messages)
       const { state } = pubRoom ? await checkCodeOnce(k) : await checkCode(k);
-      if (!pubRoom && state === 'wrong') { topic = null; $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
+      if (!pubRoom && state === 'wrong') {
+        topic = null; $('code').value = ''; $('code').focus();
+        if (useSaved) { forgetKey(r); $('err').textContent = 'The saved code for this room no longer works. Enter the room code.'; }
+        else $('err').textContent = 'Wrong room code.';
+        return;
+      }
+      if (!pubRoom && !useSaved) rememberKey(r, k);
       name = newName; room = r; key = k; isPublic = pubRoom; joinedAt = Date.now(); createdAt = state === 'new' ? joinedAt : 0; renderBell();
       localStorage.setItem('chat-name', name); $('lbName').value = name;
       saveMyRoom(room, isPublic, { joined: Date.now(), seen: Date.now() });
@@ -693,7 +756,7 @@
       connect(); $('text').focus(); renderRooms();
       publish({ t: state === 'new' ? 'create' : 'join', id: myId, name, ts: Date.now() }).catch(err => addSys(err.message));
       if (isPublic) { announce(); heartbeat = setInterval(announce, HEARTBEAT_MS); }
-      if (pendingShare) { const g = pendingShare; pendingShare = null; shareStats(g); }
+      if (pendingShare) { const g = pendingShare; pendingShare = null; postCard(g); }
     } catch (err) {
       $('err').textContent = err.message || 'Something went wrong. Try again.';
     } finally { btn.disabled = false; btn.textContent = 'Join'; }
@@ -725,7 +788,22 @@
   const sydDate = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
   const sydYesterday = () => sydDate(new Date(Date.now() - 864e5));
   function lsJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
+  // Repair: today's daily is finished (saved result) but was never counted in the stats -> count it now.
+  // Same rules as the game: one count per day, streak continues if the last win was yesterday.
+  function repairWordle() {
+    const last = lsJSON('wordle-last'), today = sydDate();
+    if (!last || last.date !== today || !last.over) return;
+    const s = Object.assign({ played: 0, wins: 0, streak: 0, maxStreak: 0, dist: [0, 0, 0, 0, 0, 0], last: null, lastWin: null }, lsJSON('wordle-stats') || {});
+    if (s.last === today) return;
+    if (!Array.isArray(s.dist) || s.dist.length !== 6) s.dist = [0, 0, 0, 0, 0, 0];
+    const n = num(last.n || (Array.isArray(last.rows) ? last.rows.length : 0), 1, 6);
+    s.played = num(s.played, 0, 1e5) + 1; s.last = today;
+    if (last.won) { s.streak = s.lastWin === sydYesterday() ? num(s.streak, 0, 1e5) + 1 : 1; s.lastWin = today; s.wins = num(s.wins, 0, 1e5) + 1; s.dist[n - 1] = num(s.dist[n - 1], 0, 1e5) + 1; s.maxStreak = Math.max(num(s.maxStreak, 0, 1e5), s.streak); }
+    else s.streak = 0;
+    try { localStorage.setItem('wordle-stats', JSON.stringify(s)); } catch {}
+  }
   function wordleStats() {
+    repairWordle();
     const s = lsJSON('wordle-stats') || {};
     const played = num(s.played, 0, 100000), wins = num(s.wins, 0, played);
     const dist = Array.isArray(s.dist) ? s.dist.slice(0, 6).map(v => num(v, 0, 100000)) : [0, 0, 0, 0, 0, 0];
@@ -749,24 +827,128 @@
 
   // ---- stats cards in the chat ----
   let pendingShare = null;
-  async function shareStats(game) {
-    const s = statsFor(game);
-    if (!s) return;
-    if (!key) { // not in a room: ask to join one first, then share automatically
-      pendingShare = game; leaveIfNeeded(); setPanel(true);
-      $('err').textContent = 'Join a room to share your ' + GAME_NAMES[game] + ' stats — they\'ll be posted right after you join.';
-      (clean($('name').value) ? $('roomIn') : $('name')).focus();
-      return;
-    }
-    try { await publish({ t: 'card', game, s, id: myId, name, ts: Date.now() }); }
+  // "Share" opens the room picker; joinFirst() is the old flow (join a room, then the card posts)
+  function shareStats(game) { if (statsFor(game)) openPicker(game); }
+  function joinFirst(game) {
+    pendingShare = game; if (key) leaveRoom(); leaveIfNeeded(); setPanel(true);
+    $('err').textContent = 'Join a room to share your ' + GAME_NAMES[game] + ' stats — they\'ll be posted right after you join.';
+    (clean($('name').value) ? $('roomIn') : $('name')).focus();
+  }
+  async function postCard(game) {
+    try { await publish({ t: 'card', game, s: statsFor(game), id: myId, name, ts: Date.now() }); }
     catch (err) { addSys(err.message); }
     if (narrow()) { mobileTab = 'chat'; applyLayout(); }
   }
+
+  // ---- share room picker ----
+  let pkGame = null, pkSeq = 0;
+  const pkName = () => key ? name : clean($('pkName').value || $('name').value || localStorage.getItem('chat-name') || '').slice(0, 32);
+  const isHere = (r, pub) => !!key && r === room && pub === isPublic;
+  function closePicker() { $('picker').classList.remove('on'); pkGame = null; }
+  function openPicker(game) {
+    pkGame = game; const seq = ++pkSeq;
+    $('pkTitle').textContent = 'Share ' + GAME_ICONS[game] + ' ' + GAME_NAMES[game] + ' stats to…';
+    $('pkErr').textContent = '';
+    $('pkName').value = pkName(); $('pkNameF').style.display = key ? 'none' : '';
+    const prev = $('pkPrev'); prev.textContent = '';
+    const c = buildCard({ id: myId, name: pkName() || 'You', ts: Date.now() }, { game, s: statsFor(game) }); if (c) { c.classList.add('me'); prev.appendChild(c); }
+    const mine = Object.entries(myRooms()).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 12)
+      .map(([k]) => [k.slice(k.indexOf(':') + 1), k.startsWith('pub:')]).filter(([r]) => validRoom(r));
+    if (key && !mine.some(([r, pub]) => isHere(r, pub))) mine.unshift([room, isPublic]);
+    mine.sort((a, b) => isHere(b[0], b[1]) - isHere(a[0], a[1])); // current room first (preselected)
+    const el = $('pkMine'); el.textContent = '';
+    if (!mine.length) el.innerHTML = '<div class="empty">No rooms yet in this browser.</div>';
+    for (const [r, pub] of mine) el.appendChild(pickerRow(r, pub, true));
+    const pubEl = $('pkPub'); pubEl.innerHTML = '<div class="empty">Loading…</div>';
+    loadDirectory().then(list => {
+      if (seq !== pkSeq) return; pubEl.textContent = '';
+      const rest = list.filter(e => !mine.some(([r, pub]) => pub && r === e.room));
+      if (!rest.length) pubEl.innerHTML = '<div class="empty">No other public rooms in the last 12 hours.</div>';
+      rest.slice(0, 15).forEach(e => pubEl.appendChild(pickerRow(e.room, true, false, ago(e.last))));
+    }).catch(() => { if (seq === pkSeq) pubEl.innerHTML = '<div class="empty">Couldn\'t load public rooms.</div>'; });
+    $('picker').classList.add('on');
+    const here = el.querySelector('.roomItem.sel'); if (here) here.focus();
+  }
+  function pickerRow(r, pub, mine, info) {
+    const wrap = document.createElement('div');
+    const row = document.createElement('div'); row.className = 'rrow';
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'roomItem' + (isHere(r, pub) ? ' sel' : '');
+    b.dataset.room = r; b.dataset.type = pub ? 'pub' : 'priv';
+    const n = document.createElement('span'); n.className = 'rn'; n.textContent = (pub ? '# ' : '🔒 ') + r;
+    const i = document.createElement('span'); i.className = 'ri';
+    const saved = pub || isHere(r, pub) || hasSavedKey(r);
+    i.textContent = isHere(r, pub) ? 'here now' : !saved ? 'needs code' : info || (pub ? 'public' : 'key saved');
+    b.append(n, i); row.appendChild(b);
+    if (mine) {
+      const fg = document.createElement('button'); fg.type = 'button'; fg.className = 'link fg'; fg.textContent = 'Forget';
+      fg.title = pub ? 'Remove from My rooms' : 'Remove from My rooms and forget the saved room key';
+      fg.addEventListener('click', () => { forgetRoom(r, pub); wrap.remove(); renderRooms(); });
+      row.appendChild(fg);
+    }
+    wrap.appendChild(row);
+    b.addEventListener('click', async () => {
+      $('pkErr').textContent = '';
+      if (isHere(r, pub)) return shareTo(r, pub, key, b);
+      const k = await keyFor(r, pub);
+      if (k) return shareTo(r, pub, k, b);
+      // private room without a saved key: ask for the code once, inline
+      if (wrap.querySelector('.pkCode')) { wrap.querySelector('input').focus(); return; }
+      const f = document.createElement('form'); f.className = 'pkCode'; f.autocomplete = 'off';
+      f.innerHTML = '<input type="password" maxlength="64" placeholder="Room code for ' + r + '" aria-label="Room code"><button type="submit">Share</button>';
+      f.addEventListener('submit', async e => {
+        e.preventDefault(); const code = f.querySelector('input').value; if (!code) return;
+        const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Checking…';
+        try {
+          const k2 = await deriveKey(r, code, false, true);
+          const { state } = await checkCode(k2, await topicFor(r, false), false);
+          if (state === 'wrong') { $('pkErr').textContent = 'Wrong room code for ' + r + '.'; f.querySelector('input').value = ''; f.querySelector('input').focus(); return; }
+          await rememberKey(r, k2); i.textContent = 'key saved'; f.remove();
+          await shareTo(r, false, k2, b);
+        } catch (err) { $('pkErr').textContent = err.message || 'Something went wrong.'; }
+        finally { btn.disabled = false; btn.textContent = 'Share'; }
+      });
+      wrap.appendChild(f); f.querySelector('input').focus();
+    });
+    return wrap;
+  }
+  async function shareTo(r, pub, k, btn) {
+    const game = pkGame, nm = pkName();
+    if (!game) return;
+    if (!nm) { $('pkErr').textContent = 'Enter your name first.'; $('pkNameF').style.display = ''; $('pkName').focus(); return; }
+    if (!key) { localStorage.setItem('chat-name', nm); $('name').value = nm; $('lbName').value = nm; }
+    const here = isHere(r, pub);
+    btn.disabled = true;
+    try {
+      await publishTo(here ? topic : await topicFor(r, pub), k, pub, { t: 'card', game, s: statsFor(game), id: myId, name: nm, ts: Date.now() });
+    } catch (err) { $('pkErr').textContent = err.message; btn.disabled = false; return; }
+    btn.disabled = false;
+    if (!here) saveMyRoom(r, pub, {});
+    closePicker();
+    if (here) { if (narrow()) { mobileTab = 'chat'; applyLayout(); } return; }
+    // posted somewhere else: stay where you are, offer to go there
+    showToast('Shared ' + GAME_NAMES[game] + ' stats to ' + (pub ? '#' : '🔒 ') + r, () => { hideToast(); goToRoom(r, pub); });
+  }
+  let toastT2;
+  function showToast(text, go) {
+    $('t2text').textContent = text; $('t2go').onclick = go; $('toast2').classList.add('on');
+    clearTimeout(toastT2); toastT2 = setTimeout(hideToast, 7000);
+  }
+  function hideToast() { $('toast2').classList.remove('on'); }
+  function goToRoom(r, pub) { if (!clean($('name').value)) $('name').value = localStorage.getItem('chat-name') || ''; pickRoom(r, pub); }
+  $('pkClose').addEventListener('click', closePicker);
+  $('picker').addEventListener('click', e => { if (e.target.id === 'picker') closePicker(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('picker').classList.contains('on')) closePicker(); });
+  $('pkNew').addEventListener('click', () => { const g = pkGame; closePicker(); if (g) joinFirst(g); });
+  $('pkName').addEventListener('input', () => { const n = $('pkPrev').querySelector('.meta b'); if (n) n.textContent = clean($('pkName').value) || 'You'; });
   function leaveIfNeeded() { $('chat').classList.remove('on'); $('join').classList.add('on'); }
   const EM = { c: '🟩', p: '🟨', a: '⬛' };
   function addCard(m, p, at) {
+    const d = buildCard(m, p); if (!d) return false;
+    push(d, at); return true;
+  }
+  function buildCard(m, p) {
     const game = p.game, s = p.s && typeof p.s === 'object' ? p.s : null;
-    if (!GAME_NAMES[game] || !s) return false;
+    if (!GAME_NAMES[game] || !s) return null;
     const d = document.createElement('div'); d.className = 'msg' + (isMine(m) ? ' me' : '');
     const meta = document.createElement('div'); meta.className = 'meta';
     const b = document.createElement('b'); b.textContent = m.name; meta.append(b, ' · ' + fmt(m.ts));
@@ -788,8 +970,8 @@
     } else if (game === 'house') {
       kv([['Chips', '◆ ' + num(s.chips, 0, 1e7).toLocaleString()]]);
     }
-    d.append(meta, card); push(d, at);
-    return true;
+    d.append(meta, card);
+    return d;
   }
   $('shareBtn').addEventListener('click', () => {
     const menu = $('shareMenu'); menu.textContent = '';
