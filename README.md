@@ -14,3 +14,9 @@ Identity: stable per-browser id in localStorage (chat-client-id, shared by tabs)
 ## Home page (Offsuit House + chat)
 - `index.html`: home page. Game (`game.html`, the Offsuit House canvas game, unchanged; font in `fonts/`) in an iframe on the left; chat panel (360px) on the right, collapsible; on screens <=860px the page is chat-only (game hidden and not loaded).
 - Room list: "My rooms" (localStorage `chat-rooms`, with activity hints from polling each room's encrypted topic) and "Public rooms" (ntfy topic `offsuit-rtchat-7f3k9q-directory-v1`; rooms announce `{room,id,ts}` on join and every 10 min; `unlist` hides a room). Codes are never published. Private rooms (checkbox off) never announce; every encrypted message carries `pub` so joiners respect a room's private setting.
+
+## Mobile tabs + extra games
+- Narrow screens (<=860px): bottom tab bar Chat | Wordle | Flappy (Chat default). Games load only when their tab is first opened; chat keeps running, with an unread badge on the Chat tab. Offsuit House stays desktop-only.
+- Desktop: small House | Wordle | Flappy switcher in the top bar (House default, choice remembered).
+- `wordle.html`: self-contained (embedded ~1.7k answers from the Stanford GraphBase common-word list, ~14.9k valid guesses). Daily word by Sydney date, Practice mode, stats/streak in localStorage, share copies emoji grid. `#practice=<word>` starts a practice game with that word.
+- `flappy.html`: canvas, tap/click/Space to flap, DPR-aware, delta-time physics, pauses when hidden or when you switch tabs; best score in localStorage.

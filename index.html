@@ -8,8 +8,8 @@
   @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/inter-latin.woff2") format("woff2")}
   :root{--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D;--hdr:52px;--chatw:360px}
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;overflow:hidden}
-  body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+  html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+  body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100vh;height:100dvh}
   button{background:var(--accent);color:#000;border:0;border-radius:8px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
   button:disabled{opacity:.5;cursor:default}
   .link{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;font-weight:500;font-size:12px;border-radius:8px}
@@ -18,7 +18,7 @@
   input:focus{border-color:var(--accent)}
 
   /* ---- top bar ---- */
-  .top{height:var(--hdr);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg)}
+  .top{flex:none;height:var(--hdr);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg)}
   .brand{font-weight:600;letter-spacing:-.01em;white-space:nowrap}
   .brand span{color:var(--accent)}
   .keys{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -33,17 +33,32 @@
   #toggleChat.closed{background:none;color:var(--text);border:1px solid var(--border)}
 
   /* ---- layout ---- */
-  .main{position:relative;display:flex;height:calc(100% - var(--hdr))}
+  .main{position:relative;display:flex;flex:1;min-height:0}
   .gameWrap{position:relative;flex:1;min-width:0;background:#000}
-  #game{display:block;width:100%;height:100%;border:0;background:#000}
+  .gframe{display:none;width:100%;height:100%;border:0;background:#000}
+  .gframe.on{display:block}
+  .gsw{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
+  .gsw button{background:none;border:0;border-radius:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 10px}
+  .gsw button.on{background:var(--panel);color:var(--accent)}
+  .tabs{display:none;flex:none;border-top:1px solid var(--border);background:var(--bg);padding:0 0 env(safe-area-inset-bottom)}
+  .tabs button{position:relative;flex:1;background:none;border:0;border-radius:0;color:var(--muted);font-size:13px;font-weight:600;padding:12px 4px 13px;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabs button .ic{font-size:18px;line-height:1}
+  .tabs button.on{color:var(--accent)}
+  .tabs .badge{top:4px;right:calc(50% - 26px)}
   .focusHint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);color:var(--muted);font-size:12px;padding:6px 12px;border-radius:999px;pointer-events:none;transition:opacity .3s}
   .focusHint.hide{opacity:0}
   aside{width:var(--chatw);flex:none;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--border);min-height:0}
   body.collapsed aside{display:none}
   /* narrow screens: chat only (the game is hidden and never loaded) */
+  /* narrow screens: bottom tabs Chat | Wordle | Flappy (Offsuit House is desktop-only and never loaded here) */
   @media (max-width:860px){
-    .keys,#toggleChat,.gameWrap{display:none}
+    .keys,#toggleChat,.gsw{display:none}
+    .top{height:calc(var(--hdr) + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+    .tabs{display:flex}
     aside,body.collapsed aside{display:flex;width:100%;border-left:0}
+    body.m-game aside{display:none}
+    body.m-chat .gameWrap{display:none}
+    .focusHint{display:none}
   }
 
   /* ---- chat panel ---- */
@@ -91,6 +106,7 @@
 <body>
 <div class="top">
   <div class="brand">Offsuit House<span>.</span></div>
+  <div class="gsw" id="gameSwitch" role="tablist" aria-label="Game"><button type="button" data-game="house" class="on">House</button><button type="button" data-game="wordle">Wordle</button><button type="button" data-game="flappy">Flappy</button></div>
   <div class="keys">Click the game, then <kbd>WASD</kbd>/<kbd>←↑↓→</kbd> move · <kbd>E</kbd>/<kbd>Enter</kbd> enter · <kbd>Esc</kbd> back</div>
   <div class="topR">
     <div class="status"><span class="dot" id="dot"></span><span id="statusText">chat offline</span></div>
@@ -100,7 +116,9 @@
 
 <div class="main">
   <div class="gameWrap">
-    <iframe id="game" data-src="game.html" title="Offsuit House game" allow="autoplay; fullscreen"></iframe>
+    <iframe id="game" class="gframe" data-game="house" data-src="game.html" title="Offsuit House game" allow="autoplay; fullscreen"></iframe>
+    <iframe id="gWordle" class="gframe" data-game="wordle" data-src="wordle.html" title="Wordle"></iframe>
+    <iframe id="gFlappy" class="gframe" data-game="flappy" data-src="flappy.html" title="Flappy"></iframe>
     <div class="focusHint" id="focusHint">Click the game to play with the keyboard</div>
   </div>
 
@@ -152,6 +170,12 @@
     </div>
   </aside>
 </div>
+
+<nav class="tabs" id="tabs" aria-label="Views">
+  <button type="button" data-tab="chat" class="on"><span class="ic">💬</span>Chat<span class="badge" id="tabBadge"></span></button>
+  <button type="button" data-tab="wordle"><span class="ic">🔤</span>Wordle</button>
+  <button type="button" data-tab="flappy"><span class="ic">🐤</span>Flappy</button>
+</nav>
 
 <script>
 (() => {
@@ -241,17 +265,45 @@
   }
 
   // ---- layout: panel collapse (desktop); narrow screens are chat-only ----
-  const panelVisible = () => narrow() || !document.body.classList.contains('collapsed');
+  let mobileTab = 'chat';
+  let desktopGame = ['house', 'wordle', 'flappy'].includes(localStorage.getItem('home-game')) ? localStorage.getItem('home-game') : 'house';
+  const panelVisible = () => narrow() ? mobileTab === 'chat' : !document.body.classList.contains('collapsed');
+  const activeGame = () => narrow() ? (mobileTab === 'chat' ? null : mobileTab) : desktopGame;
   function renderToggle() {
     const vis = panelVisible();
     $('toggleChat').firstChild.textContent = vis ? 'Hide chat ' : 'Chat ';
     $('toggleChat').classList.toggle('closed', vis);
     if (vis) panelUnread = 0;
-    $('badge').textContent = panelUnread > 99 ? '99+' : panelUnread;
-    $('badge').classList.toggle('on', panelUnread > 0);
+    for (const b of [$('badge'), $('tabBadge')]) { b.textContent = panelUnread > 99 ? '99+' : panelUnread; b.classList.toggle('on', panelUnread > 0); }
   }
+  // show the active game frame (loading it on first use) and pause the others
+  function applyLayout() {
+    const g = activeGame();
+    document.body.classList.toggle('m-chat', narrow() && !g);
+    document.body.classList.toggle('m-game', narrow() && !!g);
+    document.querySelectorAll('.gframe').forEach(f => {
+      const on = f.dataset.game === g;
+      if (on && !f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
+      f.classList.toggle('on', on);
+      if (!on && f.getAttribute('src')) try { f.contentWindow.postMessage({ type: 'pause' }, '*'); } catch {}
+    });
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === mobileTab));
+    document.querySelectorAll('#gameSwitch button').forEach(b => b.classList.toggle('on', b.dataset.game === desktopGame));
+    $('focusHint').style.display = g === 'house' ? '' : 'none';
+    document.querySelector('.keys').style.visibility = desktopGame === 'house' ? 'visible' : 'hidden';
+    renderToggle();
+  }
+  $('tabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tab]'); if (!b) return;
+    mobileTab = b.dataset.tab; applyLayout();
+    if (mobileTab !== 'chat') focusGame();
+  });
+  $('gameSwitch').addEventListener('click', e => {
+    const b = e.target.closest('button[data-game]'); if (!b) return;
+    desktopGame = b.dataset.game; localStorage.setItem('home-game', desktopGame); applyLayout(); focusGame();
+  });
   function setPanel(show) {
-    if (narrow()) return; // chat-only layout on narrow screens
+    if (narrow()) { if (show) { mobileTab = 'chat'; applyLayout(); } return; } // narrow: Chat tab
     document.body.classList.toggle('collapsed', !show); localStorage.setItem('chat-panel', show ? 'open' : 'closed');
     renderToggle();
     if (!show) focusGame();
@@ -259,20 +311,26 @@
   $('toggleChat').addEventListener('click', () => setPanel(!panelVisible()));
   if (localStorage.getItem('chat-panel') === 'closed') document.body.classList.add('collapsed');
   // load the game only on wide screens (and later if the window gets wider)
-  function maybeLoadGame() { const g = $('game'); if (!narrow() && !g.getAttribute('src')) g.setAttribute('src', g.dataset.src); }
-  matchMedia('(max-width: 860px)').addEventListener('change', () => { renderToggle(); maybeLoadGame(); });
+  function maybeLoadGame() { applyLayout(); }
+  matchMedia('(max-width: 860px)').addEventListener('change', applyLayout);
 
   // ---- game focus ----
   const gameEl = $('game');
-  function focusGame() { try { gameEl.focus(); gameEl.contentWindow.focus(); } catch {} }
+  function focusGame() {
+    const f = document.querySelector('.gframe.on'); if (!f) return;
+    const go = () => { try { f.focus(); f.contentWindow.focus(); } catch {} };
+    go(); f.addEventListener('load', go, { once: true });
+  }
   function updateFocusHint() { $('focusHint').classList.toggle('hide', document.activeElement === gameEl); }
   window.addEventListener('blur', () => setTimeout(updateFocusHint, 0));
   window.addEventListener('focus', updateFocusHint);
   document.addEventListener('focusin', updateFocusHint);
+  document.querySelectorAll('.gframe').forEach(f => f.addEventListener('load', () => {
+    try { f.contentWindow.addEventListener('pointerdown', () => f.contentWindow.focus()); } catch {}
+  }));
   gameEl.addEventListener('load', () => {
     // clicking anywhere on the game focuses it; also focus it at start unless an invite link brought you here
-    try { gameEl.contentWindow.addEventListener('pointerdown', () => gameEl.contentWindow.focus()); } catch {}
-    if (!hashRoom) focusGame();
+    if (!hashRoom && activeGame() === 'house') focusGame();
     updateFocusHint();
   });
 
