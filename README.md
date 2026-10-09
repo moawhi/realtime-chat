@@ -1,5 +1,5 @@
 # Realtime chat
 Single static page (`index.html`, no build). Realtime relay: ntfy.sh public pub/sub over HTTPS (SSE to receive, POST to send), no account.
-Rooms via URL hash: `#room=lobby`. Topic = `offsuit-rtchat-7f3k9q-<room>`.
-Messages are cached by ntfy.sh for ~12h, then gone. Public relay: anyone who guesses the topic can read — don't share secrets.
+Rooms via URL hash: `#room=lobby` (the room code is never put in the link). Joining needs name + room + room code.
+Topic = `offsuit-rtchat-7f3k9q-` + first 32 hex of SHA-256("room/<room>"). Payloads are AES-GCM encrypted with a key from PBKDF2(code, salt=room, 200k). A code is accepted if it decrypts the room's recent history; an empty room (no messages in ~12h) takes the first joiner's code. ntfy.sh keeps messages ~12h.
 Deploy: `./deploy-github-pages.sh` after `gh auth login`.

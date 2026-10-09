@@ -45,6 +45,8 @@
   .room code{color:var(--text)}
   .link{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;font-weight:500;font-size:12px}
   .link:hover{color:var(--text)}
+  .hint{color:var(--muted);font-size:12px;padding:0 16px 10px;border-bottom:1px solid var(--border)}
+  .room{border-bottom:0}
 </style>
 </head>
 <body>
@@ -56,17 +58,19 @@
 
   <div id="join" class="panel">
     <h1>Join the chat</h1>
-    <p>Enter your name to start talking. Share this page's link so others join the same room.</p>
+    <p>Enter your name, the room and its code. If the room is new, the code you enter becomes its code. Messages are end-to-end encrypted with it.</p>
     <form id="joinForm">
       <div class="field"><label for="name">Your name</label><input id="name" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh" required></div>
-      <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby"></div>
+      <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby" required></div>
+      <div class="field"><label for="code">Room code</label><input id="code" type="password" maxlength="64" autocomplete="off" placeholder="New room? Your code sets it" required></div>
       <button id="joinBtn" type="submit">Join</button>
       <div class="err" id="err"></div>
     </form>
   </div>
 
   <div id="chat" class="panel">
-    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button">Copy invite link</button> <button class="link" id="leave" type="button">Leave</button></span></div>
+    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button> <button class="link" id="leave" type="button">Leave</button></span></div>
+    <div class="hint">🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.</div>
     <div id="messages" aria-live="polite"></div>
     <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
   </div>
@@ -74,7 +78,8 @@
 
 <script>
 (() => {
-  // Realtime relay: ntfy.sh public pub/sub (free, no account, HTTPS on port 443).
+  // Realtime relay: ntfy.sh public pub/sub (free, no account, HTTPS). The relay only ever sees
+  // a hashed topic and AES-GCM ciphertext; the key is derived in the browser from room + room code.
   const RELAY = 'https://ntfy.sh';
   const APP = 'offsuit-rtchat-7f3k9q';
   const $ = id => document.getElementById(id);
@@ -82,12 +87,35 @@
   const slug = s => clean(s).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'lobby';
   const myId = Math.random().toString(36).slice(2, 10);
   const seen = new Set();
-  let es, name, room, topic;
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  let es, name, room, topic, key;
 
   const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
-  $('roomIn').value = hashRoom || 'lobby';
+  $('roomIn').value = hashRoom || '';
   $('name').value = localStorage.getItem('chat-name') || '';
-  if (!$('name').value) $('name').focus();
+  ($('name').value ? ($('roomIn').value ? $('code') : $('roomIn')) : $('name')).focus();
+
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+
+  async function deriveKey(room, code) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('offsuit-rtchat/v1/' + room), iterations: 200000, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function seal(obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+    return JSON.stringify({ v: 1, iv: b64(iv), ct: b64(ct) });
+  }
+  // returns object, or null if not our format, or false if it is our format but the key is wrong
+  async function open(str, k = key) {
+    let e; try { e = JSON.parse(str); } catch { return null; }
+    if (!e || e.v !== 1 || typeof e.iv !== 'string' || typeof e.ct !== 'string') return null;
+    try { return JSON.parse(dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(e.iv) }, k, unb64(e.ct)))); }
+    catch { return false; }
+  }
 
   function setStatus(on, text) { $('dot').classList.toggle('on', on); $('statusText').textContent = text; }
   function fmt(ts) {
@@ -107,53 +135,90 @@
 
   function connect() {
     setStatus(false, 'connecting…');
-    // since=12h shows the relay's recent cache (ntfy keeps ~12h) so late joiners see recent messages
     es = new EventSource(RELAY + '/' + topic + '/sse?since=12h');
     es.onopen = () => setStatus(true, 'live');
     es.onerror = () => setStatus(false, es.readyState === 2 ? 'offline' : 'reconnecting…');
-    es.addEventListener('message', ev => {
-      let n, p; try { n = JSON.parse(ev.data); p = JSON.parse(n.message); } catch { return; }
-      if (!n || seen.has(n.id) || !p || typeof p !== 'object') return;
+    es.addEventListener('message', async ev => {
+      let n; try { n = JSON.parse(ev.data); } catch { return; }
+      if (!n || seen.has(n.id)) return;
       seen.add(n.id);
+      const p = await open(n.message);
+      if (!p || typeof p !== 'object') return; // not decryptable with this room code -> ignore
       const who = String(p.name || '?').slice(0, 32);
-      if (p.t === 'join') { if (p.id !== myId) addSys(who + ' joined · ' + fmt(p.ts || n.time * 1000)); return; }
+      if (p.t === 'join' || p.t === 'create') {
+        if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000));
+        return;
+      }
       if (typeof p.text !== 'string') return;
       addMsg({ id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 });
     });
   }
 
   async function publish(obj) {
-    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: JSON.stringify(obj) }) });
+    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: await seal(obj) }) });
     if (!r.ok) throw new Error(r.status === 429 ? 'Rate limited by the free relay — wait a moment.' : 'Send failed (' + r.status + ')');
   }
 
-  $('joinForm').addEventListener('submit', e => {
+  // Validate the code against the room's recent (encrypted) history.
+  // 'ok' = at least one message decrypts; 'wrong' = room has encrypted messages but none decrypt; 'new' = room empty.
+  async function checkCode(k) {
+    const r = await fetch(RELAY + '/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
+    if (!r.ok) throw new Error('Could not reach the chat relay (' + r.status + '). Try again.');
+    const lines = (await r.text()).split('\n').filter(Boolean);
+    let ours = 0;
+    for (const line of lines.reverse()) {
+      let n; try { n = JSON.parse(line); } catch { continue; }
+      if (n.event !== 'message') continue;
+      const p = await open(n.message, k);
+      if (p) return 'ok';
+      if (p === false) ours++;
+    }
+    return ours ? 'wrong' : 'new';
+  }
+
+  $('joinForm').addEventListener('submit', async e => {
     e.preventDefault();
+    $('err').textContent = '';
     name = clean($('name').value).slice(0, 32);
+    const roomRaw = clean($('roomIn').value), code = $('code').value;
     if (!name) { $('err').textContent = 'Please enter your name.'; return; }
-    localStorage.setItem('chat-name', name);
-    room = slug($('roomIn').value);
-    topic = APP + '-' + room;
-    history.replaceState(null, '', '#room=' + encodeURIComponent(room));
-    $('roomName').textContent = room; $('meName').textContent = name;
-    $('join').style.display = 'none'; $('chat').style.display = 'flex';
-    addSys('You joined as ' + name + '. Messages from the last ~12h are shown; nothing is stored long-term.');
-    connect(); $('text').focus();
-    publish({ t: 'join', id: myId, name, ts: Date.now() }).catch(() => {});
+    if (!roomRaw) { $('err').textContent = 'Please enter a room.'; return; }
+    if (!code) { $('err').textContent = 'Please enter the room code.'; return; }
+    room = slug(roomRaw);
+    const btn = $('joinBtn'); btn.disabled = true; btn.textContent = 'Checking code…';
+    try {
+      topic = APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + room))).slice(0, 32);
+      const k = await deriveKey(room, code);
+      const state = await checkCode(k);
+      if (state === 'wrong') { $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
+      key = k;
+      localStorage.setItem('chat-name', name);
+      history.replaceState(null, '', '#room=' + encodeURIComponent(room));
+      $('roomName').textContent = room; $('meName').textContent = name;
+      $('join').style.display = 'none'; $('chat').style.display = 'flex';
+      addSys(state === 'new'
+        ? 'New room created — your code is now its code. Messages from the last ~12h are shown; nothing is stored long-term.'
+        : 'You joined as ' + name + '. Messages from the last ~12h are shown; nothing is stored long-term.');
+      connect(); $('text').focus();
+      publish({ t: state === 'new' ? 'create' : 'join', id: myId, name, ts: Date.now() }).catch(err => addSys(err.message));
+    } catch (err) {
+      $('err').textContent = err.message || 'Something went wrong. Try again.';
+    } finally { btn.disabled = false; btn.textContent = 'Join'; }
   });
 
   $('send').addEventListener('submit', async e => {
     e.preventDefault();
     const text = $('text').value.trim();
-    if (!text) return;
+    if (!text || !key) return;
     $('text').value = '';
     try { await publish({ id: myId, name, text, ts: Date.now() }); }
     catch (err) { $('text').value = text; addSys(err.message); }
   });
 
   $('copy').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(location.href); $('copy').textContent = 'Copied!'; } catch { prompt('Copy this link:', location.href); }
-    setTimeout(() => $('copy').textContent = 'Copy invite link', 1500);
+    const link = location.origin + location.pathname + '#room=' + encodeURIComponent(room);
+    try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied — send the code separately'; } catch { prompt('Invite link (share the code separately):', link); }
+    setTimeout(() => $('copy').textContent = 'Copy invite link (no code)', 2500);
   });
   $('leave').addEventListener('click', () => { if (es) es.close(); location.reload(); });
 })();
