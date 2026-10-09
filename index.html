@@ -37,6 +37,39 @@
   .gameWrap{position:relative;flex:1;min-width:0;background:#000}
   .gframe{display:none;width:100%;height:100%;border:0;background:#000}
   .gframe.on{display:block}
+  #lbView{overflow-y:auto;background:#000}
+  .lbwrap{max-width:640px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+  .lbtop{display:flex;justify-content:space-between;align-items:center;margin:4px 0 10px}
+  .seg2{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .seg2 button{background:none;border:0;border-radius:0;color:var(--muted);font-size:13px;font-weight:600;padding:7px 12px}
+  .seg2 button.on{background:var(--panel);color:var(--accent)}
+  #lbBody{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .lbrow{display:grid;grid-template-columns:36px 1fr repeat(var(--n,2),64px);gap:6px;align-items:center;padding:10px 12px;border-top:1px solid var(--border);font-size:14px}
+  #lbBody[data-cols="4"] .lbrow{--n:2} #lbBody[data-cols="6"] .lbrow{--n:4}
+  .lbrow span:not(:nth-child(2)){text-align:right;font-variant-numeric:tabular-nums}
+  .lbrow span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbrow.lbhead{border-top:0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .lbrow.you{background:#1f1f0f;box-shadow:inset 3px 0 0 var(--accent)}
+  .lbrow em{font-style:normal;font-size:11px;font-weight:700;color:#000;background:var(--accent);border-radius:4px;padding:1px 5px;margin-left:4px}
+  .lbrow:nth-child(2) span:first-child{color:var(--accent);font-weight:700}
+  #lbBody .empty{padding:14px}
+  .lbme{display:flex;gap:8px;margin-top:14px}
+  .lbme button{white-space:nowrap;padding:10px 14px}
+  @media (max-width:520px){ #lbBody[data-cols="6"] .lbrow{grid-template-columns:28px 1fr repeat(4,46px);font-size:13px;padding:10px 8px} }
+  #houseShare{position:absolute;right:14px;bottom:12px;background:var(--panel);display:none}
+  body.house-on #houseShare{display:block}
+  #houseShare:disabled{opacity:.4}
+  #shareMenu{display:none;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--border)}
+  #shareMenu.on{display:flex}
+  .scard{min-width:200px}
+  .sch{font-weight:700;margin-bottom:4px}
+  .ssub{color:var(--muted);font-size:12px;margin-bottom:4px}
+  .sgrid{white-space:pre;line-height:1.15;font-size:15px;margin:2px 0 6px}
+  .skv{display:flex;gap:14px;margin-top:4px}
+  .skv div{display:flex;flex-direction:column}
+  .skv b{font-size:16px}
+  .skv span{font-size:11px;color:var(--muted)}
+  .msg.me .scard{border-color:#4a4a2a}
   .gsw{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
   .gsw button{background:none;border:0;border-radius:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 10px}
   .gsw button.on{background:var(--panel);color:var(--accent)}
@@ -106,7 +139,7 @@
 <body>
 <div class="top">
   <div class="brand">Offsuit House<span>.</span></div>
-  <div class="gsw" id="gameSwitch" role="tablist" aria-label="Game"><button type="button" data-game="house" class="on">House</button><button type="button" data-game="wordle">Wordle</button><button type="button" data-game="flappy">Flappy</button></div>
+  <div class="gsw" id="gameSwitch" role="tablist" aria-label="Game"><button type="button" data-game="house" class="on">House</button><button type="button" data-game="wordle">Wordle</button><button type="button" data-game="flappy">Flappy</button><button type="button" data-game="ranking">🏆 Ranking</button></div>
   <div class="keys">Click the game, then <kbd>WASD</kbd>/<kbd>←↑↓→</kbd> move · <kbd>E</kbd>/<kbd>Enter</kbd> enter · <kbd>Esc</kbd> back</div>
   <div class="topR">
     <div class="status"><span class="dot" id="dot"></span><span id="statusText">chat offline</span></div>
@@ -120,6 +153,18 @@
     <iframe id="gWordle" class="gframe" data-game="wordle" data-src="wordle.html" title="Wordle"></iframe>
     <iframe id="gFlappy" class="gframe" data-game="flappy" data-src="flappy.html" title="Flappy"></iframe>
     <div class="focusHint" id="focusHint">Click the game to play with the keyboard</div>
+    <button class="link" id="houseShare" type="button" disabled title="Post your chip bank to the chat room">💬 Share chips to room</button>
+    <div id="lbView" class="gframe" data-game="ranking">
+      <div class="lbwrap">
+        <h2>Global ranking</h2>
+        <p class="sub">Players active in the last 12 hours. Scores are self-reported by each browser, so this isn't cheat-proof — just for fun.</p>
+        <div class="lbtop"><div class="seg2" id="lbTabs"><button type="button" data-lb="flappy" class="on">🐤 Flappy</button><button type="button" data-lb="wordle">🔤 Wordle</button></div><button class="link" id="lbRefresh" type="button">Refresh</button></div>
+        <div id="lbBody"><div class="empty">Loading…</div></div>
+        <div class="lbme"><input id="lbName" maxlength="32" placeholder="Your name on the board"><button id="lbSubmit" type="button">Submit my scores</button></div>
+        <div class="sub" id="lbMsg" style="margin-top:8px"></div>
+        <p class="sub">Flappy ranks by best score. Wordle ranks by current daily streak, then win %, then fewest average guesses. Offsuit House chips aren't ranked: the game lets you set your chips with [ and ].</p>
+      </div>
+    </div>
   </div>
 
   <aside id="panel" aria-label="Chat">
@@ -127,12 +172,13 @@
     <div class="view on" id="join">
       <div class="pad">
         <h2>Join a chat room</h2>
-        <p class="sub">Name, room and room code. A new room takes the code you enter. Messages are end-to-end encrypted with it.</p>
+        <p class="sub">Public rooms are open to anyone, no code. Private rooms need a room code (a new private room takes the code you enter) and are end-to-end encrypted with it.</p>
         <form id="joinForm" autocomplete="off">
           <div class="field"><label for="name">Your name</label><input id="name" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh" required></div>
           <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby" required></div>
-          <div class="field"><label for="code">Room code</label><input id="code" type="password" maxlength="64" autocomplete="off" placeholder="New room? Your code sets it" required></div>
-          <label class="check"><input type="checkbox" id="listPublic" checked> List this room publicly (name only, never the code)</label>
+          <label class="check"><input type="checkbox" id="listPublic" checked> Public room: listed for everyone, no code</label>
+          <div class="field" id="codeField"><label for="code">Room code</label><input id="code" type="password" maxlength="64" autocomplete="off" placeholder="New room? Your code sets it"></div>
+          <p class="sub" id="typeHint" style="margin:-4px 0 12px"></p>
           <button id="joinBtn" type="submit">Join</button>
           <div class="err" id="err"></div>
         </form>
@@ -143,15 +189,17 @@
     <!-- chat view -->
     <div class="view" id="chat">
       <div class="roomBar">
-        <span>Room <code id="roomName"></code> · you are <code id="meName"></code></span>
+        <span><span id="roomType"></span> room <code id="roomName"></code> · you are <code id="meName"></code></span>
         <span class="btns">
           <button class="link" id="roomsBtn" type="button">Rooms</button>
+          <button class="link" id="shareBtn" type="button" title="Post your game stats to this room">📊 Share stats</button>
           <button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button>
           <button class="link" id="bell" type="button" title="Notifications on/off">🔔 On</button>
           <button class="link" id="leave" type="button">Leave</button>
         </span>
       </div>
-      <div class="hint">🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.</div>
+      <div class="hint" id="roomHint"></div>
+      <div id="shareMenu"></div>
       <div id="roomsPane"></div>
       <div id="messages" aria-live="polite"></div>
       <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
@@ -175,6 +223,7 @@
   <button type="button" data-tab="chat" class="on"><span class="ic">💬</span>Chat<span class="badge" id="tabBadge"></span></button>
   <button type="button" data-tab="wordle"><span class="ic">🔤</span>Wordle</button>
   <button type="button" data-tab="flappy"><span class="ic">🐤</span>Flappy</button>
+  <button type="button" data-tab="ranking"><span class="ic">🏆</span>Ranking</button>
 </nav>
 
 <script>
@@ -183,7 +232,7 @@
   // a hashed topic and AES-GCM ciphertext; the key is derived in the browser from room + room code.
   const RELAY = 'https://ntfy.sh';
   const APP = 'offsuit-rtchat-7f3k9q';
-  const DIR_TOPIC = APP + '-directory-v1';          // public room directory (room names only)
+  const DIR_TOPIC = APP + '-directory-v2';          // public room directory (public, code-free rooms only)
   const HEARTBEAT_MS = 10 * 60 * 1000;
   const $ = id => document.getElementById(id);
   const clean = s => (s || '').trim().replace(/\s+/g, ' ');
@@ -215,11 +264,16 @@
   const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
   const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-  const topicFor = async r => APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + r))).slice(0, 32);
+  // Private (code) rooms and public (code-free) rooms live in separate topic namespaces, so a public
+  // room can never read or hijack a private room with the same name.
+  const topicFor = async (r, pub) => pub
+    ? APP + '-pub-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('pubroom/' + r))).slice(0, 32)
+    : APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + r))).slice(0, 32);
 
-  async function deriveKey(room, code) {
-    const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('offsuit-rtchat/v1/' + room), iterations: 200000, hash: 'SHA-256' },
+  // Public rooms use a key derived from the room name only (anyone can join; it just keeps the relay from reading along).
+  async function deriveKey(room, code, pub) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(pub ? 'offsuit-public-room' : code), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode((pub ? 'offsuit-rtchat/pub/v1/' : 'offsuit-rtchat/v1/') + room), iterations: pub ? 20000 : 200000, hash: 'SHA-256' },
       base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
   async function seal(obj) {
@@ -266,7 +320,7 @@
 
   // ---- layout: panel collapse (desktop); narrow screens are chat-only ----
   let mobileTab = 'chat';
-  let desktopGame = ['house', 'wordle', 'flappy'].includes(localStorage.getItem('home-game')) ? localStorage.getItem('home-game') : 'house';
+  let desktopGame = ['house', 'wordle', 'flappy', 'ranking'].includes(localStorage.getItem('home-game')) ? localStorage.getItem('home-game') : 'house';
   const panelVisible = () => narrow() ? mobileTab === 'chat' : !document.body.classList.contains('collapsed');
   const activeGame = () => narrow() ? (mobileTab === 'chat' ? null : mobileTab) : desktopGame;
   function renderToggle() {
@@ -283,13 +337,16 @@
     document.body.classList.toggle('m-game', narrow() && !!g);
     document.querySelectorAll('.gframe').forEach(f => {
       const on = f.dataset.game === g;
-      if (on && !f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
+      const isFrame = f.tagName === 'IFRAME';
+      if (on && isFrame && !f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
       f.classList.toggle('on', on);
-      if (!on && f.getAttribute('src')) try { f.contentWindow.postMessage({ type: 'pause' }, '*'); } catch {}
+      if (!on && isFrame && f.getAttribute('src')) try { f.contentWindow.postMessage({ type: 'pause' }, '*'); } catch {}
     });
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === mobileTab));
     document.querySelectorAll('#gameSwitch button').forEach(b => b.classList.toggle('on', b.dataset.game === desktopGame));
     $('focusHint').style.display = g === 'house' ? '' : 'none';
+    document.body.classList.toggle('house-on', g === 'house');
+    if (g === 'ranking') loadBoard();
     document.querySelector('.keys').style.visibility = desktopGame === 'house' ? 'visible' : 'hidden';
     renderToggle();
   }
@@ -389,19 +446,29 @@
     renderBell();
   });
 
-  // ---- my rooms (this browser) ----
-  function myRooms() { try { const o = JSON.parse(localStorage.getItem('chat-rooms') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
-  function saveMyRoom(r, patch) {
-    const all = myRooms(); all[r] = Object.assign({ joined: Date.now(), seen: Date.now(), public: true }, all[r], patch);
-    const keep = Object.entries(all).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 20);
-    localStorage.setItem('chat-rooms', JSON.stringify(Object.fromEntries(keep)));
+  // ---- my rooms (this browser). Keyed "pub:<room>" / "priv:<room>" ----
+  function myRooms() {
+    try {
+      let o = JSON.parse(localStorage.getItem('chat-rooms-v2') || 'null');
+      if (!o || typeof o !== 'object') { // migrate v1 (all v1 rooms were code-protected rooms)
+        o = {}; const old = JSON.parse(localStorage.getItem('chat-rooms') || '{}') || {};
+        for (const [r, m] of Object.entries(old)) if (validRoom(r)) o['priv:' + r] = { joined: m.joined, seen: m.seen };
+        localStorage.setItem('chat-rooms-v2', JSON.stringify(o));
+      }
+      return o;
+    } catch { return {}; }
   }
-  function forgetRoom(r) { const all = myRooms(); delete all[r]; localStorage.setItem('chat-rooms', JSON.stringify(all)); }
+  const roomKey = (r, pub) => (pub ? 'pub:' : 'priv:') + r;
+  function saveMyRoom(r, pub, patch) {
+    const all = myRooms(), k = roomKey(r, pub); all[k] = Object.assign({ joined: Date.now(), seen: Date.now() }, all[k], patch);
+    const keep = Object.entries(all).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 20);
+    localStorage.setItem('chat-rooms-v2', JSON.stringify(Object.fromEntries(keep)));
+  }
 
-  // ---- public directory ----
-  async function announce(t) {
-    if (!room) return;
-    try { await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: DIR_TOPIC, message: JSON.stringify({ v: 1, t, room, id: myId, ts: Date.now() }) }) }); } catch {}
+  // ---- public directory (public, code-free rooms only) ----
+  async function announce() {
+    if (!room || !isPublic) return;
+    try { await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: DIR_TOPIC, message: JSON.stringify({ v: 2, t: 'room', room, id: myId, ts: Date.now() }) }) }); } catch {}
   }
   async function loadDirectory() {
     const r = await fetch(RELAY + '/' + DIR_TOPIC + '/json?poll=1&since=12h', { cache: 'no-store' });
@@ -409,18 +476,17 @@
     const rooms = new Map();
     for (const line of (await r.text()).split('\n')) {
       let n, p; try { n = JSON.parse(line); p = JSON.parse(n.message); } catch { continue; }
-      if (n.event !== 'message' || !p || p.v !== 1 || !validRoom(p.room)) continue;
+      if (n.event !== 'message' || !p || p.v !== 2 || !validRoom(p.room)) continue;
       const e = rooms.get(p.room) || { room: p.room, last: 0, ids: new Set(), listed: true, lastEvt: 0 };
       const t = n.time * 1000;
       if (t >= e.lastEvt) { e.lastEvt = t; e.listed = p.t !== 'unlist'; }
-      if (p.t !== 'unlist') { e.last = Math.max(e.last, t); if (typeof p.id === 'string') e.ids.add(p.id.slice(0, 32)); }
+      if (p.t === 'room') { e.last = Math.max(e.last, t); if (typeof p.id === 'string') e.ids.add(p.id.slice(0, 32)); }
       rooms.set(p.room, e);
     }
     return [...rooms.values()].filter(e => e.listed && e.last).sort((a, b) => b.last - a.last).slice(0, 50);
   }
-  // recent activity of a room I know (counts encrypted messages; content stays unreadable without the code)
-  async function roomActivity(r, since) {
-    const res = await fetch(RELAY + '/' + await topicFor(r) + '/json?poll=1&since=12h', { cache: 'no-store' });
+  async function roomActivity(r, pub, since) {
+    const res = await fetch(RELAY + '/' + await topicFor(r, pub) + '/json?poll=1&since=12h', { cache: 'no-store' });
     if (!res.ok) return null;
     let last = 0, fresh = 0;
     for (const line of (await res.text()).split('\n')) {
@@ -430,54 +496,61 @@
     }
     return { last, fresh };
   }
-  function roomButton(r, info, extra) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'roomItem' + (r === room && key ? ' cur' : '');
-    b.dataset.room = r;
-    const n = document.createElement('span'); n.className = 'rn'; n.textContent = (extra && extra.lock ? '🔒 ' : '# ') + r;
+  function roomButton(r, pub, info) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'roomItem' + (r === room && key && pub === isPublic ? ' cur' : '');
+    b.dataset.room = r; b.dataset.type = pub ? 'pub' : 'priv';
+    const n = document.createElement('span'); n.className = 'rn'; n.textContent = (pub ? '# ' : '🔒 ') + r;
     const i = document.createElement('span'); i.className = 'ri'; if (info && info.cls) i.classList.add(info.cls); i.textContent = info ? info.text : '';
     b.append(n, i);
-    b.addEventListener('click', () => pickRoom(r));
+    b.addEventListener('click', () => pickRoom(r, pub));
     return b;
   }
   let renderSeq = 0;
   async function renderRooms() {
     const seq = ++renderSeq;
-    // My rooms
-    const mine = Object.entries(myRooms()).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 12);
+    const mine = Object.entries(myRooms()).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 12)
+      .map(([k, m]) => [k.slice(k.indexOf(':') + 1), k.startsWith('pub:'), m]).filter(([r]) => validRoom(r));
     const my = $('myRooms'); my.textContent = '';
     if (!mine.length) my.innerHTML = '<div class="empty">Rooms you join appear here.</div>';
-    const btns = mine.map(([r, m]) => { const b = roomButton(r, { text: m.public === false ? 'private' : '' }, { lock: m.public === false }); my.appendChild(b); return [r, m, b]; });
-    // Public rooms
+    const btns = mine.map(([r, pub, m]) => { const b = roomButton(r, pub, { text: pub ? 'public' : 'private' }); my.appendChild(b); return [r, pub, m, b]; });
     loadDirectory().then(list => {
       if (seq !== renderSeq) return;
-      const pub = $('pubRooms'); pub.textContent = '';
-      if (!list.length) { pub.innerHTML = '<div class="empty">No public rooms in the last 12 hours. Create one above.</div>'; return; }
-      list.forEach(e => pub.appendChild(roomButton(e.room, { text: ago(e.last) + ' · ' + e.ids.size + (e.ids.size === 1 ? ' person' : ' people') })));
+      const el = $('pubRooms'); el.textContent = '';
+      if (!list.length) { el.innerHTML = '<div class="empty">No public rooms in the last 12 hours. Create one above.</div>'; return; }
+      list.forEach(e => el.appendChild(roomButton(e.room, true, { text: ago(e.last) + ' · ' + e.ids.size + (e.ids.size === 1 ? ' person' : ' people') })));
     }).catch(() => { if (seq === renderSeq) $('pubRooms').innerHTML = '<div class="empty">Couldn\'t load the room directory. Try Refresh.</div>'; });
-    // activity hints for my rooms
-    for (const [r, m, b] of btns) {
-      if (r === room && key) { b.querySelector('.ri').textContent = 'here now'; continue; }
-      roomActivity(r, m.seen || 0).then(a => {
+    for (const [r, pub, m, b] of btns) {
+      if (r === room && key && pub === isPublic) { b.querySelector('.ri').textContent = 'here now'; continue; }
+      roomActivity(r, pub, m.seen || 0).then(a => {
         if (!a || seq !== renderSeq) return;
         const ri = b.querySelector('.ri');
         if (a.fresh) { ri.textContent = a.fresh + ' new'; ri.classList.add('new'); }
         else if (a.last) ri.textContent = 'active ' + ago(a.last);
-        else ri.textContent = m.public === false ? 'private · quiet' : 'quiet';
+        else ri.textContent = (pub ? 'public' : 'private') + ' · quiet';
       }).catch(() => {});
     }
   }
   $('refreshRooms').addEventListener('click', renderRooms);
   setInterval(() => { if ($('roomLists').offsetParent) renderRooms(); }, 60000);
 
+  // join form: code field only for private rooms
+  function syncCodeField() {
+    const pub = $('listPublic').checked;
+    $('codeField').style.display = pub ? 'none' : '';
+    $('code').required = !pub;
+    $('typeHint').textContent = pub ? 'Public: anyone can join from the list and read the chat. No code.' : 'Private: needs the room code, end-to-end encrypted, never listed.';
+  }
+  $('listPublic').addEventListener('change', syncCodeField);
+
   function placeRoomLists(where) { $(where).appendChild($('roomLists')); }
-  function pickRoom(r) {
-    if (key && r === room) { $('roomsPane').classList.remove('on'); placeRoomLists('roomsHome'); return; }
+  function pickRoom(r, pub) {
+    if (key && r === room && pub === isPublic) { $('roomsPane').classList.remove('on'); placeRoomLists('roomsHome'); return; }
     leaveRoom();
-    $('roomIn').value = r;
-    const m = myRooms()[r]; $('listPublic').checked = m ? m.public !== false : true;
+    $('roomIn').value = r; $('listPublic').checked = !!pub; syncCodeField();
     $('err').textContent = '';
     setPanel(true);
-    ($('name').value ? $('code') : $('name')).focus();
+    if (pub && clean($('name').value)) { $('joinForm').requestSubmit(); return; } // public: join straight away
+    (clean($('name').value) ? $('code') : $('name')).focus();
   }
   $('roomsBtn').addEventListener('click', () => {
     const on = !$('roomsPane').classList.contains('on');
@@ -512,30 +585,33 @@
     } catch {}
   }
   async function handleNote(n, myEs) {
-    {
-      if (!n || n.event && n.event !== 'message' || seen.has(n.id)) return;
-      seen.add(n.id);
-      const p = await open(n.message);
-      if (myEs !== es) return; // left the room meanwhile
-      // Safety net: we just "created" this room, but a message under a different code shows up from
-      // before/around our creation (relay was slow to show it) -> the room already existed: reject.
-      if (p === false && createdAt && n.time * 1000 < createdAt + 5000 && Date.now() - createdAt < 20000) {
-        leaveRoom(); $('err').textContent = 'Wrong room code.'; $('code').focus(); return;
-      }
-      if (!p || typeof p !== 'object') return; // not decryptable with this room code -> ignore
-      saveMyRoom(room, { seen: Date.now() });
-      if (p.pub === false && isPublic) { isPublic = false; clearInterval(heartbeat); saveMyRoom(room, { public: false }); }
-      const who = String(p.name || '?').slice(0, 32);
-      if (p.t === 'join' || p.t === 'create') {
-        if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000), n.time);
-        return;
-      }
-      if (typeof p.text !== 'string') return;
-      const m = { id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 };
-      addMsg(m, n.time);
-      // only live messages from others (not history loaded on join)
-      if (!isMine(m) && !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000) onIncoming(m);
+    if (!n || n.event && n.event !== 'message' || seen.has(n.id)) return;
+    seen.add(n.id);
+    const p = await open(n.message);
+    if (myEs !== es) return; // left the room meanwhile
+    // Safety net (private rooms): we just "created" this room, but a message under a different code shows up
+    // from before/around our creation (relay was slow to show it) -> the room already existed: reject.
+    if (p === false && !isPublic && createdAt && n.time * 1000 < createdAt + 5000 && Date.now() - createdAt < 20000) {
+      leaveRoom(); $('err').textContent = 'Wrong room code.'; $('code').focus(); return;
     }
+    if (!p || typeof p !== 'object') return; // not decryptable with this room's key -> ignore
+    saveMyRoom(room, isPublic, { seen: Date.now() });
+    const who = String(p.name || '?').slice(0, 32);
+    const live = !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000;
+    if (p.t === 'join' || p.t === 'create') {
+      if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000), n.time);
+      return;
+    }
+    if (p.t === 'card') {
+      const m = { id: p.id, name: who, ts: Number(p.ts) || n.time * 1000 };
+      if (!addCard(m, p, n.time)) return;
+      if (!isMine(m) && live) onIncoming({ name: who, text: 'shared ' + (GAME_NAMES[p.game] || 'game') + ' stats' });
+      return;
+    }
+    if (typeof p.text !== 'string') return;
+    const m = { id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 };
+    addMsg(m, n.time);
+    if (!isMine(m) && live) onIncoming(m);
   }
 
   async function publish(obj) {
@@ -547,7 +623,6 @@
   // 'ok' = at least one message decrypts; 'wrong' = room has encrypted messages but none decrypt; 'new' = room empty.
   async function checkCode(k) {
     let res = await checkCodeOnce(k);
-    // the relay can take a moment to make brand-new messages visible; double-check before declaring a room new
     for (const wait of [1500, 2500]) {
       if (res.state !== 'new') break;
       await new Promise(r => setTimeout(r, wait)); res = await checkCodeOnce(k);
@@ -564,7 +639,7 @@
       let n; try { n = JSON.parse(line); } catch { continue; }
       if (n.event !== 'message') continue;
       const p = await open(n.message, k);
-      if (p) return { state: 'ok', pub: typeof p.pub === 'boolean' ? p.pub : undefined };
+      if (p) return { state: 'ok' };
       if (p === false) ours++;
     }
     return { state: ours ? 'wrong' : 'new' };
@@ -573,11 +648,11 @@
   function leaveRoom() {
     if (es) { es.close(); es = null; }
     clearInterval(heartbeat);
-    if (room && key) saveMyRoom(room, { seen: Date.now() });
+    if (room && key) saveMyRoom(room, isPublic, { seen: Date.now() });
     key = null; topic = null; createdAt = 0; seen.clear(); historyIds.clear();
     unread = 0; panelUnread = 0; updateTitle(); renderToggle();
     $('messages').textContent = '';
-    $('roomsPane').classList.remove('on');
+    $('roomsPane').classList.remove('on'); $('shareMenu').classList.remove('on');
     placeRoomLists('roomsHome');
     $('chat').classList.remove('on'); $('join').classList.add('on');
     $('code').value = '';
@@ -588,35 +663,37 @@
   $('joinForm').addEventListener('submit', async e => {
     e.preventDefault();
     $('err').textContent = '';
+    const pubRoom = $('listPublic').checked;
     const newName = clean($('name').value).slice(0, 32);
     const roomRaw = clean($('roomIn').value), code = $('code').value;
-    if (!newName) { $('err').textContent = 'Please enter your name.'; return; }
+    if (!newName) { $('err').textContent = 'Please enter your name.'; $('name').focus(); return; }
     if (!roomRaw) { $('err').textContent = 'Please enter a room.'; return; }
-    if (!code) { $('err').textContent = 'Please enter the room code.'; return; }
+    if (!pubRoom && !code) { $('err').textContent = 'Please enter the room code.'; return; }
     const r = slug(roomRaw);
     initAudio(); if (notifyOn) askPermission().then(() => { if (key) renderBell(); }); // inside the click gesture
-    const btn = $('joinBtn'); btn.disabled = true; btn.textContent = 'Checking code…';
+    const btn = $('joinBtn'); btn.disabled = true; btn.textContent = pubRoom ? 'Joining…' : 'Checking code…';
     try {
-      const t = await topicFor(r);
-      const k = await deriveKey(r, code);
-      topic = t;
-      const { state, pub } = await checkCode(k);
-      if (state === 'wrong') { topic = null; $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
-      name = newName; room = r; key = k; joinedAt = Date.now(); createdAt = state === 'new' ? joinedAt : 0; isPublic = $('listPublic').checked && pub !== false; renderBell();
-      localStorage.setItem('chat-name', name);
-      saveMyRoom(room, { joined: Date.now(), seen: Date.now(), public: isPublic });
-      history.replaceState(null, '', '#room=' + encodeURIComponent(room));
+      topic = await topicFor(r, pubRoom);
+      const k = await deriveKey(r, code, pubRoom);
+      // public rooms: no code to check; the poll only fills history (no alerts for old messages)
+      const { state } = pubRoom ? await checkCodeOnce(k) : await checkCode(k);
+      if (!pubRoom && state === 'wrong') { topic = null; $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
+      name = newName; room = r; key = k; isPublic = pubRoom; joinedAt = Date.now(); createdAt = state === 'new' ? joinedAt : 0; renderBell();
+      localStorage.setItem('chat-name', name); $('lbName').value = name;
+      saveMyRoom(room, isPublic, { joined: Date.now(), seen: Date.now() });
+      history.replaceState(null, '', '#room=' + encodeURIComponent(room) + (isPublic ? '&pub=1' : ''));
       $('roomName').textContent = room; $('meName').textContent = name;
+      $('roomType').textContent = isPublic ? 'Public' : '🔒 Private';
+      $('roomHint').textContent = isPublic ? '🌐 Public room — anyone can join from the list and read along. Don\'t share secrets.' : '🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.';
+      $('copy').textContent = isPublic ? 'Copy invite link' : 'Copy invite link (no code)';
       $('join').classList.remove('on'); $('chat').classList.add('on');
-      addSys(state === 'new'
-        ? 'New room created — your code is now its code. Messages from the last ~12h are shown; nothing is stored long-term.'
-        : 'You joined as ' + name + '. Messages from the last ~12h are shown; nothing is stored long-term.');
-      if (pub === false) addSys('This room is private — it isn\'t shown in the public room list.');
-      else if (!isPublic) addSys('This room is now private — it won\'t be shown in the public room list.');
+      addSys((state === 'new'
+        ? (isPublic ? 'New public room created. ' : 'New room created — your code is now its code. ')
+        : 'You joined as ' + name + '. ') + 'Messages from the last ~12h are shown; nothing is stored long-term.');
       connect(); $('text').focus(); renderRooms();
       publish({ t: state === 'new' ? 'create' : 'join', id: myId, name, ts: Date.now() }).catch(err => addSys(err.message));
-      if (isPublic) { announce('room'); heartbeat = setInterval(() => announce('room'), HEARTBEAT_MS); }
-      else announce('unlist');
+      if (isPublic) { announce(); heartbeat = setInterval(announce, HEARTBEAT_MS); }
+      if (pendingShare) { const g = pendingShare; pendingShare = null; shareStats(g); }
     } catch (err) {
       $('err').textContent = err.message || 'Something went wrong. Try again.';
     } finally { btn.disabled = false; btn.textContent = 'Join'; }
@@ -632,22 +709,219 @@
   });
 
   $('copy').addEventListener('click', async () => {
-    const link = location.origin + location.pathname + '#room=' + encodeURIComponent(room);
-    try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied — send the code separately'; } catch { prompt('Invite link (share the code separately):', link); }
-    setTimeout(() => $('copy').textContent = 'Copy invite link (no code)', 2500);
+    const link = location.origin + location.pathname + '#room=' + encodeURIComponent(room) + (isPublic ? '&pub=1' : '');
+    const label = isPublic ? 'Copy invite link' : 'Copy invite link (no code)';
+    try { await navigator.clipboard.writeText(link); $('copy').textContent = isPublic ? 'Copied' : 'Copied — send the code separately'; } catch { prompt(isPublic ? 'Invite link:' : 'Invite link (share the code separately):', link); }
+    setTimeout(() => $('copy').textContent = label, 2500);
   });
-  $('leave').addEventListener('click', () => { leaveRoom(); $('code').focus(); });
-  window.addEventListener('pagehide', () => { if (room && key) saveMyRoom(room, { seen: Date.now() }); });
+  $('leave').addEventListener('click', () => { leaveRoom(); ($('listPublic').checked ? $('roomIn') : $('code')).focus(); });
+  window.addEventListener('pagehide', () => { if (room && key) saveMyRoom(room, isPublic, { seen: Date.now() }); });
+
+  // ---- game stats: read from this browser's storage (same origin as the games) ----
+  const GAME_NAMES = { wordle: 'Wordle', flappy: 'Flappy', house: 'Offsuit House' };
+  const GAME_ICONS = { wordle: '🔤', flappy: '🐤', house: '🏠' };
+  let houseChips = null;
+  const num = (v, lo, hi) => { v = Math.floor(Number(v)); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo; };
+  const sydDate = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const sydYesterday = () => sydDate(new Date(Date.now() - 864e5));
+  function lsJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
+  function wordleStats() {
+    const s = lsJSON('wordle-stats') || {};
+    const played = num(s.played, 0, 100000), wins = num(s.wins, 0, played);
+    const dist = Array.isArray(s.dist) ? s.dist.slice(0, 6).map(v => num(v, 0, 100000)) : [0, 0, 0, 0, 0, 0];
+    const dw = dist.reduce((a, b) => a + b, 0);
+    const avg = dw ? Math.round(dist.reduce((a, v, i) => a + v * (i + 1), 0) / dw * 100) / 100 : null;
+    const alive = s.lastWin === sydDate() || s.lastWin === sydYesterday();
+    const last = lsJSON('wordle-last');
+    const todayRes = last && last.date === sydDate() && Array.isArray(last.rows) ? { rows: last.rows.slice(0, 6).map(r => String(r).replace(/[^cpa]/g, '').slice(0, 5)), won: !!last.won, over: !!last.over } : null;
+    return { played, wins, winPct: played ? Math.round(wins / played * 100) : 0, streak: alive ? num(s.streak, 0, played) : 0, maxStreak: num(s.maxStreak, 0, played), avg, date: sydDate(), today: todayRes };
+  }
+  function flappyStats() {
+    return { best: num(localStorage.getItem('flappy-best'), 0, 100000), last: num(localStorage.getItem('flappy-last'), 0, 100000), games: num(localStorage.getItem('flappy-games'), 0, 1000000) };
+  }
+  function statsFor(game) {
+    if (game === 'wordle') return wordleStats();
+    if (game === 'flappy') return flappyStats();
+    if (game === 'house') return houseChips == null ? null : { chips: num(houseChips, 0, 1e7) };
+    return null;
+  }
+  function availableGames() { return ['wordle', 'flappy', 'house'].filter(g => g !== 'house' || houseChips != null); }
+
+  // ---- stats cards in the chat ----
+  let pendingShare = null;
+  async function shareStats(game) {
+    const s = statsFor(game);
+    if (!s) return;
+    if (!key) { // not in a room: ask to join one first, then share automatically
+      pendingShare = game; leaveIfNeeded(); setPanel(true);
+      $('err').textContent = 'Join a room to share your ' + GAME_NAMES[game] + ' stats — they\'ll be posted right after you join.';
+      (clean($('name').value) ? $('roomIn') : $('name')).focus();
+      return;
+    }
+    try { await publish({ t: 'card', game, s, id: myId, name, ts: Date.now() }); }
+    catch (err) { addSys(err.message); }
+    if (narrow()) { mobileTab = 'chat'; applyLayout(); }
+  }
+  function leaveIfNeeded() { $('chat').classList.remove('on'); $('join').classList.add('on'); }
+  const EM = { c: '🟩', p: '🟨', a: '⬛' };
+  function addCard(m, p, at) {
+    const game = p.game, s = p.s && typeof p.s === 'object' ? p.s : null;
+    if (!GAME_NAMES[game] || !s) return false;
+    const d = document.createElement('div'); d.className = 'msg' + (isMine(m) ? ' me' : '');
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const b = document.createElement('b'); b.textContent = m.name; meta.append(b, ' · ' + fmt(m.ts));
+    const card = document.createElement('div'); card.className = 'bubble scard';
+    const h = document.createElement('div'); h.className = 'sch'; h.textContent = GAME_ICONS[game] + ' ' + GAME_NAMES[game];
+    card.appendChild(h);
+    const line = (txt, cls) => { const e = document.createElement('div'); if (cls) e.className = cls; e.textContent = txt; card.appendChild(e); return e; };
+    const kv = pairs => { const g = document.createElement('div'); g.className = 'skv'; for (const [k, v] of pairs) { const c = document.createElement('div'); const vb = document.createElement('b'); vb.textContent = v; const kl = document.createElement('span'); kl.textContent = k; c.append(vb, kl); g.appendChild(c); } card.appendChild(g); };
+    if (game === 'wordle') {
+      const t = s.today && Array.isArray(s.today.rows) ? s.today : null;
+      if (t && t.rows.length) {
+        const n = Math.min(6, t.rows.length);
+        line('Today ' + String(s.date || '').slice(0, 10) + ' · ' + (t.won ? n + '/6' : t.over ? 'X/6' : 'in progress ' + n + '/6'), 'ssub');
+        line(t.rows.slice(0, 6).map(r => [...String(r).slice(0, 5)].map(ch => EM[ch] || '⬛').join('')).join('\n'), 'sgrid');
+      } else line('No daily game today yet', 'ssub');
+      kv([['Played', num(s.played, 0, 1e5)], ['Win %', num(s.winPct, 0, 100)], ['Streak', num(s.streak, 0, 1e5)], ['Avg', s.avg ? Number(s.avg).toFixed(2) : '–']]);
+    } else if (game === 'flappy') {
+      kv([['Best', num(s.best, 0, 1e5)], ['Last', num(s.last, 0, 1e5)], ['Games', num(s.games, 0, 1e6)]]);
+    } else if (game === 'house') {
+      kv([['Chips', '◆ ' + num(s.chips, 0, 1e7).toLocaleString()]]);
+    }
+    d.append(meta, card); push(d, at);
+    return true;
+  }
+  $('shareBtn').addEventListener('click', () => {
+    const menu = $('shareMenu'); menu.textContent = '';
+    for (const g of availableGames()) { const b = document.createElement('button'); b.type = 'button'; b.className = 'link'; b.textContent = GAME_ICONS[g] + ' ' + GAME_NAMES[g]; b.addEventListener('click', () => { menu.classList.remove('on'); shareStats(g); }); menu.appendChild(b); }
+    menu.classList.toggle('on');
+  });
+  $('houseShare').addEventListener('click', () => shareStats('house'));
+
+  // messages from the game frames (same origin only)
+  window.addEventListener('message', e => {
+    if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
+    const d = e.data;
+    if (d.type === 'offsuit-stats') {
+      if (d.game === 'house') { houseChips = num(d.chips, 0, 1e7); $('houseShare').disabled = false; return; }
+      if (d.game === 'wordle' || d.game === 'flappy') submitScore(d.game, false);
+    }
+    if (d.type === 'offsuit-share' && ['wordle', 'flappy', 'house'].includes(d.game)) shareStats(d.game);
+  });
+
+  // ---- global leaderboard (public ntfy topic; players active in the last ~12h) ----
+  const LB_TOPIC = APP + '-leaderboard-v1';
+  const LIMITS = { flappy: 2000, wordleStreak: 3650, wordlePlayed: 3650 };
+  let lbGame = 'flappy', lbData = { flappy: [], wordle: [] };
+  const lbName = () => clean(localStorage.getItem('chat-name') || '') .slice(0, 32);
+  function scorePayload(game) {
+    if (game === 'flappy') { const s = flappyStats(); return s.best > 0 ? { best: Math.min(s.best, LIMITS.flappy), games: s.games } : null; }
+    if (game === 'wordle') { const s = wordleStats(); return s.played > 0 ? { streak: s.streak, maxStreak: s.maxStreak, winPct: s.winPct, played: s.played, avg: s.avg } : null; }
+    return null;
+  }
+  async function submitScore(game, force) {
+    const nm = lbName(); if (!nm) return false;
+    const s = scorePayload(game); if (!s) return false;
+    const sig = JSON.stringify([nm, s]);
+    if (!force && localStorage.getItem('lb-sent-' + game) === sig) return false; // unchanged since last submit
+    try {
+      const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: LB_TOPIC, message: JSON.stringify({ v: 1, t: 'score', game, id: myId, name: nm, s, ts: Date.now() }) }) });
+      if (!r.ok) return false;
+      localStorage.setItem('lb-sent-' + game, sig);
+      setTimeout(() => { if ($('lbView').classList.contains('on')) loadBoard(); }, 2500);
+      return true;
+    } catch { return false; }
+  }
+  function sane(game, s) {
+    if (!s || typeof s !== 'object') return null;
+    if (game === 'flappy') { const best = Math.floor(Number(s.best)); if (!(best >= 1 && best <= LIMITS.flappy)) return null; return { best, games: num(s.games, 0, 1e6) }; }
+    if (game === 'wordle') {
+      const played = Math.floor(Number(s.played)); if (!(played >= 1 && played <= LIMITS.wordlePlayed)) return null;
+      const streak = num(s.streak, 0, played), maxStreak = num(s.maxStreak, 0, played), winPct = num(s.winPct, 0, 100);
+      if (streak > maxStreak) return null;
+      const avg = s.avg == null ? null : Number(s.avg); if (avg != null && !(avg >= 1 && avg <= 6)) return null;
+      return { streak, maxStreak, winPct, played, avg };
+    }
+    return null;
+  }
+  const better = {
+    flappy: (a, b) => b.s.best - a.s.best || a.t - b.t,
+    // Wordle: current streak, then win %, then fewer average guesses, then more games
+    wordle: (a, b) => b.s.streak - a.s.streak || b.s.winPct - a.s.winPct || (a.s.avg || 7) - (b.s.avg || 7) || b.s.played - a.s.played,
+  };
+  async function loadBoard() {
+    try {
+      const r = await fetch(RELAY + '/' + LB_TOPIC + '/json?poll=1&since=12h', { cache: 'no-store' });
+      if (!r.ok) throw new Error();
+      const latest = { flappy: new Map(), wordle: new Map() }, retracted = new Map();
+      for (const line of (await r.text()).split('\n')) {
+        let n, p; try { n = JSON.parse(line); p = JSON.parse(n.message); } catch { continue; }
+        if (n.event !== 'message' || !p || p.v !== 1 || typeof p.id !== 'string') continue;
+        const id = p.id.slice(0, 32), t = n.time;
+        if (p.t === 'retract') { retracted.set(id, Math.max(retracted.get(id) || 0, t)); continue; }
+        if (p.t !== 'score' || !latest[p.game]) continue;
+        const s = sane(p.game, p.s); if (!s) continue;
+        const e = { id, name: clean(String(p.name || '?')).slice(0, 32) || '?', s, t };
+        const m = latest[p.game], prev = m.get(id);
+        // dedupe by player id: keep the best entry (newest wins ties, which also picks up name changes)
+        if (!prev || better[p.game](e, prev) < 0 || (better[p.game](e, prev) === 0 && e.t >= prev.t)) m.set(id, e);
+      }
+      for (const g of ['flappy', 'wordle']) lbData[g] = [...latest[g].values()].filter(e => !(retracted.get(e.id) > e.t)).sort(better[g]).slice(0, 20);
+      renderBoard();
+    } catch { $('lbBody').innerHTML = '<div class="empty">Couldn\'t load the ranking. Try Refresh.</div>'; }
+  }
+  function renderBoard() {
+    document.querySelectorAll('#lbTabs button').forEach(b => b.classList.toggle('on', b.dataset.lb === lbGame));
+    const rows = lbData[lbGame], body = $('lbBody'); body.textContent = '';
+    const head = document.createElement('div'); head.className = 'lbrow lbhead';
+    const cols = lbGame === 'flappy' ? ['#', 'Player', 'Best', 'Games'] : ['#', 'Player', 'Streak', 'Win %', 'Avg', 'Max'];
+    cols.forEach(c => { const s = document.createElement('span'); s.textContent = c; head.appendChild(s); });
+    body.appendChild(head); body.dataset.cols = cols.length;
+    if (!rows.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'No scores from the last 12 hours yet. Play a round and submit!'; body.appendChild(e); return; }
+    rows.forEach((e, i) => {
+      const row = document.createElement('div'); row.className = 'lbrow' + (e.id === myId ? ' you' : ''); row.dataset.id = e.id;
+      const vals = lbGame === 'flappy' ? [i + 1, e.name, e.s.best, e.s.games] : [i + 1, e.name, e.s.streak, e.s.winPct + '%', e.s.avg ? e.s.avg.toFixed(2) : '–', e.s.maxStreak];
+      vals.forEach((v, j) => { const s = document.createElement('span'); s.textContent = v; if (j === 1 && e.id === myId) { const y = document.createElement('em'); y.textContent = 'you'; s.append(' ', y); } row.appendChild(s); });
+      body.appendChild(row);
+    });
+  }
+  $('lbTabs').addEventListener('click', e => { const b = e.target.closest('button[data-lb]'); if (b) { lbGame = b.dataset.lb; renderBoard(); } });
+  $('lbRefresh').addEventListener('click', loadBoard);
+  $('lbSubmit').addEventListener('click', async () => {
+    const nm = clean($('lbName').value).slice(0, 32);
+    if (!nm) { $('lbMsg').textContent = 'Enter a name first.'; $('lbName').focus(); return; }
+    localStorage.setItem('chat-name', nm); if (!key) $('name').value = nm;
+    const a = await submitScore('flappy', true), b = await submitScore('wordle', true);
+    $('lbMsg').textContent = a || b ? 'Submitted. It can take a few seconds to appear.' : 'Nothing to submit yet — play Flappy or a daily Wordle first.';
+  });
+  // re-announce current bests so the board reflects everyone active in the last ~12h
+  function reannounce() { submitScore('flappy', true); submitScore('wordle', true); }
+  setTimeout(reannounce, 4000);
+  setInterval(reannounce, HEARTBEAT_MS);
+  setInterval(() => { if ($('lbView').classList.contains('on') && !document.hidden) loadBoard(); }, 30000);
 
   // ---- start ----
-  const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
+  const hashParams = new URLSearchParams(location.hash.slice(1));
+  const hashRoom = hashParams.get('room');
   $('roomIn').value = hashRoom ? slug(hashRoom) : '';
   $('name').value = localStorage.getItem('chat-name') || '';
+  $('lbName').value = $('name').value;
+  // links without &pub=1 are private (code) rooms, like every link made before public rooms existed
+  $('listPublic').checked = hashRoom ? hashParams.get('pub') === '1' : true;
+  syncCodeField();
   if (hashRoom) {
-    const m = myRooms()[slug(hashRoom)]; if (m) $('listPublic').checked = m.public !== false;
     document.body.classList.remove('collapsed');
-    ($('name').value ? $('code') : $('name')).focus();
+    ($('name').value ? ($('listPublic').checked ? $('joinBtn') : $('code')) : $('name')).focus();
   }
+  // an invite link opened in an already-open tab: prefill it (unless we're in that very room)
+  window.addEventListener('hashchange', () => {
+    const hp = new URLSearchParams(location.hash.slice(1)), hr = hp.get('room'); if (!hr) return;
+    const r = slug(hr), pub = hp.get('pub') === '1';
+    if (key && r === room && pub === isPublic) return;
+    if (key) leaveRoom();
+    $('roomIn').value = r; $('listPublic').checked = pub; syncCodeField(); $('err').textContent = ''; setPanel(true);
+    (clean($('name').value) ? (pub ? $('joinBtn') : $('code')) : $('name')).focus();
+  });
   placeRoomLists('roomsHome');
   renderToggle(); renderRooms(); maybeLoadGame();
 })();

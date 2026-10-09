@@ -20,3 +20,9 @@ Identity: stable per-browser id in localStorage (chat-client-id, shared by tabs)
 - Desktop: small House | Wordle | Flappy switcher in the top bar (House default, choice remembered).
 - `wordle.html`: self-contained (embedded ~1.7k answers from the Stanford GraphBase common-word list, ~14.9k valid guesses). Daily word by Sydney date, Practice mode, stats/streak in localStorage, share copies emoji grid. `#practice=<word>` starts a practice game with that word.
 - `flappy.html`: canvas, tap/click/Space to flap, DPR-aware, delta-time physics, pauses when hidden or when you switch tabs; best score in localStorage.
+
+## Public rooms, stats sharing, global ranking
+- Public rooms (checkbox ticked, default): no code. Topic `offsuit-rtchat-7f3k9q-pub-` + SHA-256("pubroom/<room>"), key derived from the room name only. Listed in directory topic `...-directory-v2`. Invite links carry `&pub=1`.
+- Private rooms (unticked): unchanged — code, PBKDF2/AES-GCM, validation, never listed. Separate topic namespace, so a public room with the same name can't read or hijack a private one. Links without `&pub=1` open as private (all pre-existing links/rooms).
+- Stats cards: games postMessage the host (same origin). "Share to room" in Wordle's result card, on Flappy's game-over screen, the "Share chips to room" button over Offsuit House, and "📊 Share stats" in the chat. Posts an encrypted `t:'card'` message.
+- Global ranking: topic `...-leaderboard-v1`. Clients submit {id, name, game, stats} on a new best and re-announce every 10 min; board = players seen in the last ~12h, top 20 per game, deduped by id. Flappy by best; Wordle by current streak, then win %, then avg guesses. Self-reported, not cheat-proof; sanity limits applied. `{t:'retract', id}` removes a player's earlier entries.

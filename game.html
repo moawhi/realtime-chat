@@ -2543,6 +2543,11 @@
   }
 
   requestAnimationFrame(frame);
+  // Offsuit chat integration: report the chip bank to the host page (same origin only)
+  if (window.parent !== window) {
+    let lastChips = null;
+    setInterval(() => { if (bankChips !== lastChips) { lastChips = bankChips; try { parent.postMessage({ type: 'offsuit-stats', game: 'house', chips: bankChips }, location.origin); } catch (e) {} } }, 1000);
+  }
 })();
 </script>
 </body>
