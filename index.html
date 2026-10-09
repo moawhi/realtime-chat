@@ -69,7 +69,7 @@
   </div>
 
   <div id="chat" class="panel">
-    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button> <button class="link" id="leave" type="button">Leave</button></span></div>
+    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button> <button class="link" id="bell" type="button" title="Notifications on/off">🔔 On</button> <button class="link" id="leave" type="button">Leave</button></span></div>
     <div class="hint">🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.</div>
     <div id="messages" aria-live="polite"></div>
     <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
@@ -88,7 +88,11 @@
   const myId = Math.random().toString(36).slice(2, 10);
   const seen = new Set();
   const enc = new TextEncoder(), dec = new TextDecoder();
-  let es, name, room, topic, key;
+  const historyIds = new Set();
+  let es, name, room, topic, key, joinedAt = 0, unread = 0, audioCtx;
+  const BASE_TITLE = document.title;
+  let notifyOn = localStorage.getItem('chat-notify') !== 'off';
+  const canNotify = 'Notification' in window;
 
   const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
   $('roomIn').value = hashRoom || '';
@@ -133,6 +137,59 @@
     d.append(meta, bub); push(d);
   }
 
+  // ---- notifications / unread / sound ----
+  const isAway = () => document.hidden || !document.hasFocus();
+  function renderBell() {
+    const b = $('bell');
+    b.textContent = notifyOn ? '🔔 On' : '🔕 Off';
+    b.title = !notifyOn ? 'Notifications off — click to turn on'
+      : !canNotify ? 'Desktop notifications not supported here (sound + tab count only)'
+      : Notification.permission === 'denied' ? 'Desktop notifications blocked in browser settings (sound + tab count only)'
+      : 'Notifications on — click to turn off';
+  }
+  async function askPermission() {
+    if (!canNotify || Notification.permission !== 'default') return;
+    try { await Notification.requestPermission(); } catch {}
+  }
+  function initAudio() {
+    try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch {}
+  }
+  function ding() {
+    if (!audioCtx) return;
+    try {
+      const t = audioCtx.currentTime, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(660, t + 0.15);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.08, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 0.32);
+    } catch {}
+  }
+  function updateTitle() { document.title = unread ? '(' + unread + ') ' + BASE_TITLE : BASE_TITLE; }
+  function clearUnread() { if (!isAway()) { unread = 0; updateTitle(); } }
+  window.addEventListener('focus', clearUnread);
+  document.addEventListener('visibilitychange', clearUnread);
+  function onIncoming(p) {
+    if (!isAway()) return;
+    unread++; updateTitle();
+    if (!notifyOn) return;
+    ding();
+    if (canNotify && Notification.permission === 'granted') {
+      try {
+        const n = new Notification(p.name, { body: p.text.slice(0, 200), tag: 'chat-' + room, renotify: true });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch {}
+    }
+  }
+  $('bell').addEventListener('click', async () => {
+    notifyOn = !notifyOn;
+    localStorage.setItem('chat-notify', notifyOn ? 'on' : 'off');
+    if (notifyOn) {
+      initAudio(); await askPermission();
+      if (!canNotify) addSys('Desktop notifications aren\'t supported in this browser — you\'ll get a sound and the tab count.');
+      else if (Notification.permission === 'denied') addSys('Desktop notifications are blocked for this site in your browser settings — you\'ll get a sound and the tab count.');
+    }
+    renderBell();
+  });
+
   function connect() {
     setStatus(false, 'connecting…');
     es = new EventSource(RELAY + '/' + topic + '/sse?since=12h');
@@ -150,7 +207,10 @@
         return;
       }
       if (typeof p.text !== 'string') return;
-      addMsg({ id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 });
+      const m = { id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 };
+      addMsg(m);
+      // only live messages from others (not history loaded on join)
+      if (p.id !== myId && !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000) onIncoming(m);
     });
   }
 
@@ -165,7 +225,8 @@
     const r = await fetch(RELAY + '/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
     if (!r.ok) throw new Error('Could not reach the chat relay (' + r.status + '). Try again.');
     const lines = (await r.text()).split('\n').filter(Boolean);
-    let ours = 0;
+    let ours = 0; historyIds.clear();
+    lines.forEach(l => { try { historyIds.add(JSON.parse(l).id); } catch {} });
     for (const line of lines.reverse()) {
       let n; try { n = JSON.parse(line); } catch { continue; }
       if (n.event !== 'message') continue;
@@ -185,13 +246,14 @@
     if (!roomRaw) { $('err').textContent = 'Please enter a room.'; return; }
     if (!code) { $('err').textContent = 'Please enter the room code.'; return; }
     room = slug(roomRaw);
+    initAudio(); if (notifyOn) askPermission().then(() => { if (key) renderBell(); }); // inside the click gesture
     const btn = $('joinBtn'); btn.disabled = true; btn.textContent = 'Checking code…';
     try {
       topic = APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + room))).slice(0, 32);
       const k = await deriveKey(room, code);
       const state = await checkCode(k);
       if (state === 'wrong') { $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
-      key = k;
+      key = k; joinedAt = Date.now(); renderBell();
       localStorage.setItem('chat-name', name);
       history.replaceState(null, '', '#room=' + encodeURIComponent(room));
       $('roomName').textContent = room; $('meName').textContent = name;
