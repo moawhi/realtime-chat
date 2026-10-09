@@ -40,11 +40,10 @@
   .focusHint.hide{opacity:0}
   aside{width:var(--chatw);flex:none;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--border);min-height:0}
   body.collapsed aside{display:none}
+  /* narrow screens: chat only (the game is hidden and never loaded) */
   @media (max-width:860px){
-    .keys{display:none}
-    aside{position:absolute;top:0;right:0;bottom:0;width:min(100%,420px);z-index:5;transform:translateX(100%);transition:transform .2s ease;box-shadow:-12px 0 30px rgba(0,0,0,.6)}
-    body.collapsed aside{display:flex}
-    body.drawerOpen aside{transform:none}
+    .keys,#toggleChat,.gameWrap{display:none}
+    aside,body.collapsed aside{display:flex;width:100%;border-left:0}
   }
 
   /* ---- chat panel ---- */
@@ -101,7 +100,7 @@
 
 <div class="main">
   <div class="gameWrap">
-    <iframe id="game" src="game.html" title="Offsuit House game" allow="autoplay; fullscreen"></iframe>
+    <iframe id="game" data-src="game.html" title="Offsuit House game" allow="autoplay; fullscreen"></iframe>
     <div class="focusHint" id="focusHint">Click the game to play with the keyboard</div>
   </div>
 
@@ -224,35 +223,44 @@
     if (s < 3600) return Math.floor(s / 60) + 'm ago';
     return Math.floor(s / 3600) + 'h ago';
   }
-  function addSys(t) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = t; push(d); }
-  function push(el) { const m = $('messages'); const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 80; m.appendChild(el); if (atBottom || el.classList.contains('me')) m.scrollTop = m.scrollHeight; }
-  function addMsg(p) {
+  function addSys(t, at) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = t; push(d, at); }
+  // at = relay time (s); timed items are kept in relay order even if one arrives late (catch-up)
+  function push(el, at) {
+    const m = $('messages'); const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 80;
+    let before = null;
+    if (at) { el.dataset.t = at; before = [...m.querySelectorAll('[data-t]')].find(x => Number(x.dataset.t) > at) || null; }
+    m.insertBefore(el, before);
+    if (atBottom || el.classList.contains('me')) m.scrollTop = m.scrollHeight;
+  }
+  function addMsg(p, at) {
     const d = document.createElement('div'); d.className = 'msg' + (isMine(p) ? ' me' : '');
     const meta = document.createElement('div'); meta.className = 'meta';
     const b = document.createElement('b'); b.textContent = p.name; meta.append(b, ' · ' + fmt(p.ts));
     const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = p.text;
-    d.append(meta, bub); push(d);
+    d.append(meta, bub); push(d, at);
   }
 
-  // ---- layout: panel collapse (desktop) / drawer (narrow) ----
-  const panelVisible = () => narrow() ? document.body.classList.contains('drawerOpen') : !document.body.classList.contains('collapsed');
+  // ---- layout: panel collapse (desktop); narrow screens are chat-only ----
+  const panelVisible = () => narrow() || !document.body.classList.contains('collapsed');
   function renderToggle() {
     const vis = panelVisible();
-    $('toggleChat').firstChild.textContent = vis ? (narrow() ? 'Close chat ' : 'Hide chat ') : 'Chat ';
+    $('toggleChat').firstChild.textContent = vis ? 'Hide chat ' : 'Chat ';
     $('toggleChat').classList.toggle('closed', vis);
     if (vis) panelUnread = 0;
     $('badge').textContent = panelUnread > 99 ? '99+' : panelUnread;
     $('badge').classList.toggle('on', panelUnread > 0);
   }
   function setPanel(show) {
-    if (narrow()) document.body.classList.toggle('drawerOpen', show);
-    else { document.body.classList.toggle('collapsed', !show); localStorage.setItem('chat-panel', show ? 'open' : 'closed'); }
+    if (narrow()) return; // chat-only layout on narrow screens
+    document.body.classList.toggle('collapsed', !show); localStorage.setItem('chat-panel', show ? 'open' : 'closed');
     renderToggle();
     if (!show) focusGame();
   }
   $('toggleChat').addEventListener('click', () => setPanel(!panelVisible()));
   if (localStorage.getItem('chat-panel') === 'closed') document.body.classList.add('collapsed');
-  matchMedia('(max-width: 860px)').addEventListener('change', renderToggle);
+  // load the game only on wide screens (and later if the window gets wider)
+  function maybeLoadGame() { const g = $('game'); if (!narrow() && !g.getAttribute('src')) g.setAttribute('src', g.dataset.src); }
+  matchMedia('(max-width: 860px)').addEventListener('change', () => { renderToggle(); maybeLoadGame(); });
 
   // ---- game focus ----
   const gameEl = $('game');
@@ -423,12 +431,31 @@
   function connect() {
     setStatus(false, 'connecting…');
     es = new EventSource(RELAY + '/' + topic + '/sse?since=12h');
-    es.onopen = () => setStatus(true, 'live · #' + room);
+    es.onopen = () => {
+      setStatus(true, 'live · #' + room);
+      // The relay may take a couple of seconds to make just-sent messages visible to new subscribers;
+      // catch up shortly after (re)connecting so nothing sent around our join is missed.
+      const mine = es; [2500, 7000].forEach(ms => setTimeout(() => { if (es === mine) catchUp(mine); }, ms));
+    };
     es.onerror = () => { if (es) setStatus(false, es.readyState === 2 ? 'offline' : 'reconnecting…'); };
     const myEs = es;
-    es.addEventListener('message', async ev => {
-      let n; try { n = JSON.parse(ev.data); } catch { return; }
-      if (!n || seen.has(n.id)) return;
+    es.addEventListener('message', ev => { let n; try { n = JSON.parse(ev.data); } catch { return; } handleNote(n, myEs); });
+  }
+  async function catchUp(myEs) {
+    try {
+      const r = await fetch(RELAY + '/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
+      if (!r.ok || myEs !== es) return;
+      for (const line of (await r.text()).split('\n')) {
+        let n; try { n = JSON.parse(line); } catch { continue; }
+        if (n.event !== 'message' || seen.has(n.id)) continue;
+        if (n.time * 1000 < joinedAt) historyIds.add(n.id); // sent before we joined: history, no alert
+        await handleNote(n, myEs);
+      }
+    } catch {}
+  }
+  async function handleNote(n, myEs) {
+    {
+      if (!n || n.event && n.event !== 'message' || seen.has(n.id)) return;
       seen.add(n.id);
       const p = await open(n.message);
       if (myEs !== es) return; // left the room meanwhile
@@ -442,15 +469,15 @@
       if (p.pub === false && isPublic) { isPublic = false; clearInterval(heartbeat); saveMyRoom(room, { public: false }); }
       const who = String(p.name || '?').slice(0, 32);
       if (p.t === 'join' || p.t === 'create') {
-        if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000));
+        if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000), n.time);
         return;
       }
       if (typeof p.text !== 'string') return;
       const m = { id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 };
-      addMsg(m);
+      addMsg(m, n.time);
       // only live messages from others (not history loaded on join)
       if (!isMine(m) && !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000) onIncoming(m);
-    });
+    }
   }
 
   async function publish(obj) {
@@ -560,11 +587,11 @@
   $('name').value = localStorage.getItem('chat-name') || '';
   if (hashRoom) {
     const m = myRooms()[slug(hashRoom)]; if (m) $('listPublic').checked = m.public !== false;
-    if (narrow()) document.body.classList.add('drawerOpen'); else document.body.classList.remove('collapsed');
+    document.body.classList.remove('collapsed');
     ($('name').value ? $('code') : $('name')).focus();
   }
   placeRoomLists('roomsHome');
-  renderToggle(); renderRooms();
+  renderToggle(); renderRooms(); maybeLoadGame();
 })();
 </script>
 </body>
