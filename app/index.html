@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Offsuit">
+<meta name="robots" content="noindex">
+<title>Offsuit · Rooms & Daily (preview)</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">Offsuit<span>.</span> <em class="pv">preview</em></div>
+    <div class="status" id="status"></div>
+  </header>
+
+  <main>
+    <!-- Rooms (home) -->
+    <section class="view" id="vRooms">
+      <div class="pad">
+        <h1 class="hero">Host a room.<br><span class="acc">Play the daily.</span></h1>
+        <p class="muted">Chat with friends in a room you host, and share your daily puzzle result.</p>
+        <button class="btn" id="hostBtn" type="button">Host a room</button>
+        <form class="joinRow" id="quickJoin" autocomplete="off">
+          <input id="quickCode" class="code" maxlength="7" placeholder="ROOM CODE" aria-label="Room code" autocapitalize="characters" spellcheck="false">
+          <button class="btn alt" type="submit">Join</button>
+        </form>
+        <div class="err" id="quickErr"></div>
+        <div class="sectH"><span>My rooms</span></div>
+        <div class="list" id="myRooms"></div>
+        <div class="sectH"><span>Public rooms</span><button class="chip" id="refreshPub" type="button">Refresh</button></div>
+        <div class="list" id="pubRooms"><div class="empty">Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- Host flow -->
+    <section class="view" id="vHost">
+      <div class="pad">
+        <button class="back" data-go="#/" type="button">‹ Back</button>
+        <div id="hostForm">
+          <h2>Host a room</h2>
+          <form id="hostF" autocomplete="off">
+            <label for="hostName">Your name</label><input id="hostName" maxlength="24" autocomplete="nickname" placeholder="e.g. Minh">
+            <label for="hostTitle">Room name <span class="muted">(optional)</span></label><input id="hostTitle" maxlength="40" placeholder="Friday crew">
+            <label class="check"><input type="checkbox" id="hostPub"> List publicly — anyone can find it and join</label>
+            <button class="btn" id="hostGo" type="submit">Create room</button>
+            <div class="err" id="hostErr"></div>
+          </form>
+          <p class="muted small">You get a 6-character code. The code is the key: messages are end-to-end encrypted with it, so only people with the code can read the room.</p>
+        </div>
+        <div id="hostDone" hidden>
+          <h2>Your room is ready</h2>
+          <p class="muted" id="hostDoneTitle"></p>
+          <div class="bigcode" id="bigCode"></div>
+          <div class="row2"><button class="btn" id="shareRoom" type="button">Share invite</button><button class="btn alt" id="copyLink" type="button">Copy link</button></div>
+          <button class="btn alt full" id="copyCode" type="button">Copy code</button>
+          <button class="btn full" id="enterRoom" type="button">Enter room</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Join flow -->
+    <section class="view" id="vJoin">
+      <div class="pad">
+        <button class="back" data-go="#/" type="button">‹ Back</button>
+        <h2>Join a room</h2>
+        <form id="joinF" autocomplete="off">
+          <label for="joinCode">Room code</label><input id="joinCode" class="code" maxlength="7" placeholder="ABC234" autocapitalize="characters" spellcheck="false">
+          <label for="joinName">Your name</label><input id="joinName" maxlength="24" autocomplete="nickname" placeholder="e.g. Minh">
+          <button class="btn" id="joinGo" type="submit">Join</button>
+          <div class="err" id="joinErr"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Room -->
+    <section class="view" id="vRoom">
+      <div class="roomBar">
+        <button class="back" data-go="#/" type="button" aria-label="Back to rooms">‹</button>
+        <div class="rt"><b id="roomTitle"></b><span class="muted small" id="roomSub"></span></div>
+        <button class="chip" id="roomShare" type="button">Invite</button>
+      </div>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+      <form class="composer" id="sendF" autocomplete="off"><input id="text" maxlength="1000" placeholder="Message"><button class="btn" type="submit">Send</button></form>
+    </section>
+
+    <!-- Daily -->
+    <section class="view" id="vDaily"><div id="wordle" class="wl"></div></section>
+
+    <!-- Me -->
+    <section class="view" id="vMe">
+      <div class="pad">
+        <h2>Profile</h2>
+        <label for="meName">Name</label>
+        <div class="joinRow"><input id="meName" maxlength="24" autocomplete="nickname"><button class="btn alt" id="meSave" type="button">Save</button></div>
+        <div class="kv"><span>Plan</span><b id="mePlan">Free</b></div>
+        <div class="kv"><span>Device id</span><code id="meId"></code></div>
+        <div class="kv"><span>Since</span><span id="meSince"></span></div>
+        <div class="card soft">
+          <b>Premium — coming later</b>
+          <p class="muted small">Keep your username (reserved for you) and your chat history across devices. Today your name and history live only on this device: the relay keeps messages for about 12 hours, and this device keeps the last 300 per room.</p>
+        </div>
+        <div class="sectH"><span>On this device</span></div>
+        <div class="kv"><span>Rooms</span><b id="meRooms">0</b></div>
+        <div class="kv"><span>Saved messages</span><b id="meMsgs">0</b></div>
+        <button class="btn alt full" id="meClear" type="button">Clear chat history on this device</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="ad" id="ad" aria-label="Advertisement placeholder"><span>Ad space · 320×50</span></div>
+  <nav class="tabs" id="tabs">
+    <a href="#/" data-tab="rooms"><span class="ic">💬</span>Rooms</a>
+    <a href="#/daily" data-tab="daily"><span class="ic">🔤</span>Daily</a>
+    <a href="#/me" data-tab="me"><span class="ic">👤</span>Me</a>
+  </nav>
+</div>
+
+<div class="sheet-bg" id="picker"><div class="sheet" role="dialog" aria-labelledby="pkTitle">
+  <div class="sheet-h"><b id="pkTitle">Share result to…</b><button class="chip" id="pkClose" type="button">Close</button></div>
+  <div id="pkPrev"></div>
+  <div class="list" id="pkList"></div>
+  <div class="err" id="pkErr"></div>
+</div></div>
+<div class="toast" id="toast" role="status"><span id="toastText"></span><button class="chip acc" id="toastBtn" type="button" hidden></button></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
