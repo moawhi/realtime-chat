@@ -85,7 +85,18 @@
   const $ = id => document.getElementById(id);
   const clean = s => (s || '').trim().replace(/\s+/g, ' ');
   const slug = s => clean(s).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'lobby';
-  const myId = Math.random().toString(36).slice(2, 10);
+  // Stable per-browser identity, shared by all tabs and kept across reloads/rejoins.
+  const myId = (() => {
+    let id = null; try { id = localStorage.getItem('chat-client-id'); } catch {}
+    if (!id || !/^[a-z0-9]{8,32}$/.test(id)) {
+      id = [...crypto.getRandomValues(new Uint8Array(12))].map(b => (b % 36).toString(36)).join('');
+      try { localStorage.setItem('chat-client-id', id); } catch {}
+    }
+    return id;
+  })();
+  const sameName = (a, b) => clean(a).toLowerCase() === clean(b).toLowerCase();
+  // Mine = sent from this browser, or (fallback) sent under the name I joined with in this room.
+  const isMine = p => p.id === myId || (!!name && sameName(p.name, name));
   const seen = new Set();
   const enc = new TextEncoder(), dec = new TextDecoder();
   const historyIds = new Set();
@@ -130,7 +141,7 @@
   function addSys(t) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = t; push(d); }
   function push(el) { const m = $('messages'); const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 80; m.appendChild(el); if (atBottom || el.classList.contains('me')) m.scrollTop = m.scrollHeight; }
   function addMsg(p) {
-    const d = document.createElement('div'); d.className = 'msg' + (p.id === myId ? ' me' : '');
+    const d = document.createElement('div'); d.className = 'msg' + (isMine(p) ? ' me' : '');
     const meta = document.createElement('div'); meta.className = 'meta';
     const b = document.createElement('b'); b.textContent = p.name; meta.append(b, ' · ' + fmt(p.ts));
     const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = p.text;
@@ -210,7 +221,7 @@
       const m = { id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 };
       addMsg(m);
       // only live messages from others (not history loaded on join)
-      if (p.id !== myId && !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000) onIncoming(m);
+      if (!isMine(m) && !historyIds.has(n.id) && n.time * 1000 >= joinedAt - 60000) onIncoming(m);
     });
   }
 
