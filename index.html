@@ -3,77 +3,155 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<title>Offsuit House</title>
 <style>
-  :root{--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D}
+  @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/inter-latin.woff2") format("woff2")}
+  :root{--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D;--hdr:52px;--chatw:360px}
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  html,body{height:100%;margin:0;overflow:hidden}
   body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
-  .wrap{max-width:720px;margin:0 auto;height:100%;display:flex;flex-direction:column;padding:16px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 2px 14px}
-  .brand{font-weight:600;letter-spacing:-.01em}
-  .brand span{color:var(--accent)}
-  .status{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
-  .dot{width:8px;height:8px;border-radius:50%;background:#555}
-  .dot.on{background:var(--accent)}
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px}
-  #join{margin:auto;width:100%;max-width:380px;padding:24px}
-  #join h1{font-size:20px;margin:0 0 6px;font-weight:600}
-  #join p{color:var(--muted);margin:0 0 18px;font-size:14px}
-  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
-  input{width:100%;background:#000;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font:inherit;outline:none}
-  input:focus{border-color:var(--accent)}
   button{background:var(--accent);color:#000;border:0;border-radius:8px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
   button:disabled{opacity:.5;cursor:default}
-  .field{margin-bottom:14px}
-  #join button{width:100%}
+  .link{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;font-weight:500;font-size:12px;border-radius:8px}
+  .link:hover{color:var(--text)}
+  input{width:100%;background:#000;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;outline:none}
+  input:focus{border-color:var(--accent)}
+
+  /* ---- top bar ---- */
+  .top{height:var(--hdr);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg)}
+  .brand{font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+  .brand span{color:var(--accent)}
+  .keys{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .keys kbd{font-family:inherit;border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--text)}
+  .topR{display:flex;align-items:center;gap:12px}
+  .status{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555}
+  .dot.on{background:var(--accent)}
+  #toggleChat{position:relative;padding:6px 12px;font-size:13px}
+  .badge{display:none;position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#000;font-size:11px;line-height:18px;font-weight:700;border:2px solid #000}
+  .badge.on{display:block}
+  #toggleChat.closed{background:none;color:var(--text);border:1px solid var(--border)}
+
+  /* ---- layout ---- */
+  .main{position:relative;display:flex;height:calc(100% - var(--hdr))}
+  .gameWrap{position:relative;flex:1;min-width:0;background:#000}
+  #game{display:block;width:100%;height:100%;border:0;background:#000}
+  .focusHint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);color:var(--muted);font-size:12px;padding:6px 12px;border-radius:999px;pointer-events:none;transition:opacity .3s}
+  .focusHint.hide{opacity:0}
+  aside{width:var(--chatw);flex:none;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--border);min-height:0}
+  body.collapsed aside{display:none}
+  @media (max-width:860px){
+    .keys{display:none}
+    aside{position:absolute;top:0;right:0;bottom:0;width:min(100%,420px);z-index:5;transform:translateX(100%);transition:transform .2s ease;box-shadow:-12px 0 30px rgba(0,0,0,.6)}
+    body.collapsed aside{display:flex}
+    body.drawerOpen aside{transform:none}
+  }
+
+  /* ---- chat panel ---- */
+  .view{display:none;flex:1;min-height:0;flex-direction:column}
+  .view.on{display:flex}
+  .pad{padding:16px;overflow-y:auto;flex:1;min-height:0}
+  h2{font-size:17px;margin:0 0 4px;font-weight:600}
+  .sub{color:var(--muted);margin:0 0 14px;font-size:13px;line-height:1.45}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}
+  .field{margin-bottom:12px}
+  .check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin:2px 0 14px;cursor:pointer}
+  .check input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+  #joinBtn{width:100%}
   .err{color:#ff8a8a;font-size:13px;min-height:18px;margin-top:8px}
-  #chat{display:none;flex:1;min-height:0;flex-direction:column}
-  #messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
-  .msg{max-width:80%;align-self:flex-start}
+  .sect{margin-top:18px}
+  .sectH{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+  .sectH button{text-transform:none;letter-spacing:0}
+  .rooms{display:flex;flex-direction:column;gap:6px}
+  .roomItem{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;background:#000;border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:8px;font-weight:500;font-size:14px}
+  .roomItem:hover{border-color:#3a3a3a}
+  .roomItem.cur{border-color:var(--accent)}
+  .roomItem .rn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .roomItem .ri{color:var(--muted);font-size:12px;font-weight:400;white-space:nowrap}
+  .roomItem .new{color:var(--accent)}
+  .empty{color:var(--muted);font-size:13px;padding:4px 2px}
+  .roomBar{color:var(--muted);font-size:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  .roomBar code{color:var(--text)}
+  .roomBar .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .hint{color:var(--muted);font-size:12px;padding:0 12px 10px;border-bottom:1px solid var(--border)}
+  #messages{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:10px;min-height:0}
+  .msg{max-width:85%;align-self:flex-start}
   .msg.me{align-self:flex-end;text-align:right}
   .meta{font-size:12px;color:var(--muted);margin-bottom:4px}
   .meta b{color:var(--text);font-weight:500}
   .msg.me .meta b{color:var(--accent)}
-  .bubble{display:inline-block;text-align:left;background:#000;border:1px solid var(--border);border-radius:10px;padding:8px 12px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
-  .sys{align-self:center;color:var(--muted);font-size:12px}
-  form#send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
-  .room{color:var(--muted);font-size:12px;padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-  .room code{color:var(--text)}
-  .link{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;font-weight:500;font-size:12px}
-  .link:hover{color:var(--text)}
-  .hint{color:var(--muted);font-size:12px;padding:0 16px 10px;border-bottom:1px solid var(--border)}
-  .room{border-bottom:0}
+  .bubble{display:inline-block;text-align:left;background:#000;border:1px solid var(--border);border-radius:10px;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .sys{align-self:center;color:var(--muted);font-size:12px;text-align:center}
+  form#send{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}
+  form#send button{padding:10px 14px}
+  #roomsPane{display:none;border-bottom:1px solid var(--border);max-height:55%;overflow-y:auto;padding:12px}
+  #roomsPane.on{display:block}
+  #roomsPane .sect:first-child{margin-top:0}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="brand">Chat<span>.</span></div>
-    <div class="status"><span class="dot" id="dot"></span><span id="statusText">offline</span></div>
-  </header>
+<div class="top">
+  <div class="brand">Offsuit House<span>.</span></div>
+  <div class="keys">Click the game, then <kbd>WASD</kbd>/<kbd>←↑↓→</kbd> move · <kbd>E</kbd>/<kbd>Enter</kbd> enter · <kbd>Esc</kbd> back</div>
+  <div class="topR">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">chat offline</span></div>
+    <button id="toggleChat" type="button" aria-controls="panel">Chat <span class="badge" id="badge"></span></button>
+  </div>
+</div>
 
-  <div id="join" class="panel">
-    <h1>Join the chat</h1>
-    <p>Enter your name, the room and its code. If the room is new, the code you enter becomes its code. Messages are end-to-end encrypted with it.</p>
-    <form id="joinForm">
-      <div class="field"><label for="name">Your name</label><input id="name" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh" required></div>
-      <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby" required></div>
-      <div class="field"><label for="code">Room code</label><input id="code" type="password" maxlength="64" autocomplete="off" placeholder="New room? Your code sets it" required></div>
-      <button id="joinBtn" type="submit">Join</button>
-      <div class="err" id="err"></div>
-    </form>
+<div class="main">
+  <div class="gameWrap">
+    <iframe id="game" src="game.html" title="Offsuit House game" allow="autoplay; fullscreen"></iframe>
+    <div class="focusHint" id="focusHint">Click the game to play with the keyboard</div>
   </div>
 
-  <div id="chat" class="panel">
-    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button> <button class="link" id="bell" type="button" title="Notifications on/off">🔔 On</button> <button class="link" id="leave" type="button">Leave</button></span></div>
-    <div class="hint">🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.</div>
-    <div id="messages" aria-live="polite"></div>
-    <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
-  </div>
+  <aside id="panel" aria-label="Chat">
+    <!-- join view: form + room lists -->
+    <div class="view on" id="join">
+      <div class="pad">
+        <h2>Join a chat room</h2>
+        <p class="sub">Name, room and room code. A new room takes the code you enter. Messages are end-to-end encrypted with it.</p>
+        <form id="joinForm" autocomplete="off">
+          <div class="field"><label for="name">Your name</label><input id="name" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh" required></div>
+          <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby" required></div>
+          <div class="field"><label for="code">Room code</label><input id="code" type="password" maxlength="64" autocomplete="off" placeholder="New room? Your code sets it" required></div>
+          <label class="check"><input type="checkbox" id="listPublic" checked> List this room publicly (name only, never the code)</label>
+          <button id="joinBtn" type="submit">Join</button>
+          <div class="err" id="err"></div>
+        </form>
+        <div id="roomsHome"></div>
+      </div>
+    </div>
+
+    <!-- chat view -->
+    <div class="view" id="chat">
+      <div class="roomBar">
+        <span>Room <code id="roomName"></code> · you are <code id="meName"></code></span>
+        <span class="btns">
+          <button class="link" id="roomsBtn" type="button">Rooms</button>
+          <button class="link" id="copy" type="button" title="The link includes the room only — share the code separately">Copy invite link (no code)</button>
+          <button class="link" id="bell" type="button" title="Notifications on/off">🔔 On</button>
+          <button class="link" id="leave" type="button">Leave</button>
+        </span>
+      </div>
+      <div class="hint">🔒 Encrypted with the room code. The invite link includes only the room — share the code separately.</div>
+      <div id="roomsPane"></div>
+      <div id="messages" aria-live="polite"></div>
+      <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
+    </div>
+
+    <!-- room lists (moved between join view and the Rooms pane) -->
+    <div id="roomLists">
+      <div class="sect">
+        <div class="sectH"><span>My rooms</span></div>
+        <div class="rooms" id="myRooms"></div>
+      </div>
+      <div class="sect">
+        <div class="sectH"><span>Public rooms · last 12h</span><button class="link" id="refreshRooms" type="button">Refresh</button></div>
+        <div class="rooms" id="pubRooms"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+  </aside>
 </div>
 
 <script>
@@ -82,9 +160,14 @@
   // a hashed topic and AES-GCM ciphertext; the key is derived in the browser from room + room code.
   const RELAY = 'https://ntfy.sh';
   const APP = 'offsuit-rtchat-7f3k9q';
+  const DIR_TOPIC = APP + '-directory-v1';          // public room directory (room names only)
+  const HEARTBEAT_MS = 10 * 60 * 1000;
   const $ = id => document.getElementById(id);
   const clean = s => (s || '').trim().replace(/\s+/g, ' ');
   const slug = s => clean(s).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'lobby';
+  const validRoom = r => typeof r === 'string' && /^[a-z0-9_-]{1,40}$/.test(r);
+  const narrow = () => matchMedia('(max-width: 860px)').matches;
+
   // Stable per-browser identity, shared by all tabs and kept across reloads/rejoins.
   const myId = (() => {
     let id = null; try { id = localStorage.getItem('chat-client-id'); } catch {}
@@ -100,19 +183,15 @@
   const seen = new Set();
   const enc = new TextEncoder(), dec = new TextDecoder();
   const historyIds = new Set();
-  let es, name, room, topic, key, joinedAt = 0, unread = 0, audioCtx;
+  let es, name, room, topic, key, joinedAt = 0, unread = 0, panelUnread = 0, audioCtx, heartbeat, isPublic = true;
   const BASE_TITLE = document.title;
   let notifyOn = localStorage.getItem('chat-notify') !== 'off';
   const canNotify = 'Notification' in window;
 
-  const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
-  $('roomIn').value = hashRoom || '';
-  $('name').value = localStorage.getItem('chat-name') || '';
-  ($('name').value ? ($('roomIn').value ? $('code') : $('roomIn')) : $('name')).focus();
-
   const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
   const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const topicFor = async r => APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + r))).slice(0, 32);
 
   async function deriveKey(room, code) {
     const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
@@ -138,6 +217,12 @@
     const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + t;
   }
+  function ago(ts) {
+    const s = Math.max(0, (Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    return Math.floor(s / 3600) + 'h ago';
+  }
   function addSys(t) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = t; push(d); }
   function push(el) { const m = $('messages'); const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 80; m.appendChild(el); if (atBottom || el.classList.contains('me')) m.scrollTop = m.scrollHeight; }
   function addMsg(p) {
@@ -147,6 +232,40 @@
     const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = p.text;
     d.append(meta, bub); push(d);
   }
+
+  // ---- layout: panel collapse (desktop) / drawer (narrow) ----
+  const panelVisible = () => narrow() ? document.body.classList.contains('drawerOpen') : !document.body.classList.contains('collapsed');
+  function renderToggle() {
+    const vis = panelVisible();
+    $('toggleChat').firstChild.textContent = vis ? (narrow() ? 'Close chat ' : 'Hide chat ') : 'Chat ';
+    $('toggleChat').classList.toggle('closed', vis);
+    if (vis) panelUnread = 0;
+    $('badge').textContent = panelUnread > 99 ? '99+' : panelUnread;
+    $('badge').classList.toggle('on', panelUnread > 0);
+  }
+  function setPanel(show) {
+    if (narrow()) document.body.classList.toggle('drawerOpen', show);
+    else { document.body.classList.toggle('collapsed', !show); localStorage.setItem('chat-panel', show ? 'open' : 'closed'); }
+    renderToggle();
+    if (!show) focusGame();
+  }
+  $('toggleChat').addEventListener('click', () => setPanel(!panelVisible()));
+  if (localStorage.getItem('chat-panel') === 'closed') document.body.classList.add('collapsed');
+  matchMedia('(max-width: 860px)').addEventListener('change', renderToggle);
+
+  // ---- game focus ----
+  const gameEl = $('game');
+  function focusGame() { try { gameEl.focus(); gameEl.contentWindow.focus(); } catch {} }
+  function updateFocusHint() { $('focusHint').classList.toggle('hide', document.activeElement === gameEl); }
+  window.addEventListener('blur', () => setTimeout(updateFocusHint, 0));
+  window.addEventListener('focus', updateFocusHint);
+  document.addEventListener('focusin', updateFocusHint);
+  gameEl.addEventListener('load', () => {
+    // clicking anywhere on the game focuses it; also focus it at start unless an invite link brought you here
+    try { gameEl.contentWindow.addEventListener('pointerdown', () => gameEl.contentWindow.focus()); } catch {}
+    if (!hashRoom) focusGame();
+    updateFocusHint();
+  });
 
   // ---- notifications / unread / sound ----
   const isAway = () => document.hidden || !document.hasFocus();
@@ -177,8 +296,10 @@
   function updateTitle() { document.title = unread ? '(' + unread + ') ' + BASE_TITLE : BASE_TITLE; }
   function clearUnread() { if (!isAway()) { unread = 0; updateTitle(); } }
   window.addEventListener('focus', clearUnread);
+  setInterval(() => { if (unread) clearUnread(); }, 1000); // focus may land inside the game iframe
   document.addEventListener('visibilitychange', clearUnread);
   function onIncoming(p) {
+    if (!panelVisible()) { panelUnread++; renderToggle(); }
     if (!isAway()) return;
     unread++; updateTitle();
     if (!notifyOn) return;
@@ -186,7 +307,7 @@
     if (canNotify && Notification.permission === 'granted') {
       try {
         const n = new Notification(p.name, { body: p.text.slice(0, 200), tag: 'chat-' + room, renotify: true });
-        n.onclick = () => { window.focus(); n.close(); };
+        n.onclick = () => { window.focus(); setPanel(true); n.close(); };
       } catch {}
     }
   }
@@ -201,17 +322,118 @@
     renderBell();
   });
 
+  // ---- my rooms (this browser) ----
+  function myRooms() { try { const o = JSON.parse(localStorage.getItem('chat-rooms') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
+  function saveMyRoom(r, patch) {
+    const all = myRooms(); all[r] = Object.assign({ joined: Date.now(), seen: Date.now(), public: true }, all[r], patch);
+    const keep = Object.entries(all).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 20);
+    localStorage.setItem('chat-rooms', JSON.stringify(Object.fromEntries(keep)));
+  }
+  function forgetRoom(r) { const all = myRooms(); delete all[r]; localStorage.setItem('chat-rooms', JSON.stringify(all)); }
+
+  // ---- public directory ----
+  async function announce(t) {
+    if (!room) return;
+    try { await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: DIR_TOPIC, message: JSON.stringify({ v: 1, t, room, id: myId, ts: Date.now() }) }) }); } catch {}
+  }
+  async function loadDirectory() {
+    const r = await fetch(RELAY + '/' + DIR_TOPIC + '/json?poll=1&since=12h', { cache: 'no-store' });
+    if (!r.ok) throw new Error('relay ' + r.status);
+    const rooms = new Map();
+    for (const line of (await r.text()).split('\n')) {
+      let n, p; try { n = JSON.parse(line); p = JSON.parse(n.message); } catch { continue; }
+      if (n.event !== 'message' || !p || p.v !== 1 || !validRoom(p.room)) continue;
+      const e = rooms.get(p.room) || { room: p.room, last: 0, ids: new Set(), listed: true, lastEvt: 0 };
+      const t = n.time * 1000;
+      if (t >= e.lastEvt) { e.lastEvt = t; e.listed = p.t !== 'unlist'; }
+      if (p.t !== 'unlist') { e.last = Math.max(e.last, t); if (typeof p.id === 'string') e.ids.add(p.id.slice(0, 32)); }
+      rooms.set(p.room, e);
+    }
+    return [...rooms.values()].filter(e => e.listed && e.last).sort((a, b) => b.last - a.last).slice(0, 50);
+  }
+  // recent activity of a room I know (counts encrypted messages; content stays unreadable without the code)
+  async function roomActivity(r, since) {
+    const res = await fetch(RELAY + '/' + await topicFor(r) + '/json?poll=1&since=12h', { cache: 'no-store' });
+    if (!res.ok) return null;
+    let last = 0, fresh = 0;
+    for (const line of (await res.text()).split('\n')) {
+      let n; try { n = JSON.parse(line); } catch { continue; }
+      if (n.event !== 'message') continue;
+      const t = n.time * 1000; last = Math.max(last, t); if (t > since + 1000) fresh++;
+    }
+    return { last, fresh };
+  }
+  function roomButton(r, info, extra) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'roomItem' + (r === room && key ? ' cur' : '');
+    b.dataset.room = r;
+    const n = document.createElement('span'); n.className = 'rn'; n.textContent = (extra && extra.lock ? '🔒 ' : '# ') + r;
+    const i = document.createElement('span'); i.className = 'ri'; if (info && info.cls) i.classList.add(info.cls); i.textContent = info ? info.text : '';
+    b.append(n, i);
+    b.addEventListener('click', () => pickRoom(r));
+    return b;
+  }
+  let renderSeq = 0;
+  async function renderRooms() {
+    const seq = ++renderSeq;
+    // My rooms
+    const mine = Object.entries(myRooms()).sort((a, b) => (b[1].joined || 0) - (a[1].joined || 0)).slice(0, 12);
+    const my = $('myRooms'); my.textContent = '';
+    if (!mine.length) my.innerHTML = '<div class="empty">Rooms you join appear here.</div>';
+    const btns = mine.map(([r, m]) => { const b = roomButton(r, { text: m.public === false ? 'private' : '' }, { lock: m.public === false }); my.appendChild(b); return [r, m, b]; });
+    // Public rooms
+    loadDirectory().then(list => {
+      if (seq !== renderSeq) return;
+      const pub = $('pubRooms'); pub.textContent = '';
+      if (!list.length) { pub.innerHTML = '<div class="empty">No public rooms in the last 12 hours. Create one above.</div>'; return; }
+      list.forEach(e => pub.appendChild(roomButton(e.room, { text: ago(e.last) + ' · ' + e.ids.size + (e.ids.size === 1 ? ' person' : ' people') })));
+    }).catch(() => { if (seq === renderSeq) $('pubRooms').innerHTML = '<div class="empty">Couldn\'t load the room directory. Try Refresh.</div>'; });
+    // activity hints for my rooms
+    for (const [r, m, b] of btns) {
+      if (r === room && key) { b.querySelector('.ri').textContent = 'here now'; continue; }
+      roomActivity(r, m.seen || 0).then(a => {
+        if (!a || seq !== renderSeq) return;
+        const ri = b.querySelector('.ri');
+        if (a.fresh) { ri.textContent = a.fresh + ' new'; ri.classList.add('new'); }
+        else if (a.last) ri.textContent = 'active ' + ago(a.last);
+        else ri.textContent = m.public === false ? 'private · quiet' : 'quiet';
+      }).catch(() => {});
+    }
+  }
+  $('refreshRooms').addEventListener('click', renderRooms);
+  setInterval(() => { if ($('roomLists').offsetParent) renderRooms(); }, 60000);
+
+  function placeRoomLists(where) { $(where).appendChild($('roomLists')); }
+  function pickRoom(r) {
+    if (key && r === room) { $('roomsPane').classList.remove('on'); placeRoomLists('roomsHome'); return; }
+    leaveRoom();
+    $('roomIn').value = r;
+    const m = myRooms()[r]; $('listPublic').checked = m ? m.public !== false : true;
+    $('err').textContent = '';
+    setPanel(true);
+    ($('name').value ? $('code') : $('name')).focus();
+  }
+  $('roomsBtn').addEventListener('click', () => {
+    const on = !$('roomsPane').classList.contains('on');
+    if (on) { placeRoomLists('roomsPane'); renderRooms(); }
+    $('roomsPane').classList.toggle('on', on);
+  });
+
+  // ---- chat connection ----
   function connect() {
     setStatus(false, 'connecting…');
     es = new EventSource(RELAY + '/' + topic + '/sse?since=12h');
-    es.onopen = () => setStatus(true, 'live');
-    es.onerror = () => setStatus(false, es.readyState === 2 ? 'offline' : 'reconnecting…');
+    es.onopen = () => setStatus(true, 'live · #' + room);
+    es.onerror = () => { if (es) setStatus(false, es.readyState === 2 ? 'offline' : 'reconnecting…'); };
+    const myEs = es;
     es.addEventListener('message', async ev => {
       let n; try { n = JSON.parse(ev.data); } catch { return; }
       if (!n || seen.has(n.id)) return;
       seen.add(n.id);
       const p = await open(n.message);
+      if (myEs !== es) return; // left the room meanwhile
       if (!p || typeof p !== 'object') return; // not decryptable with this room code -> ignore
+      saveMyRoom(room, { seen: Date.now() });
+      if (p.pub === false && isPublic) { isPublic = false; clearInterval(heartbeat); saveMyRoom(room, { public: false }); }
       const who = String(p.name || '?').slice(0, 32);
       if (p.t === 'join' || p.t === 'create') {
         if (p.id !== myId) addSys(who + (p.t === 'create' ? ' created the room · ' : ' joined · ') + fmt(p.ts || n.time * 1000));
@@ -226,13 +448,19 @@
   }
 
   async function publish(obj) {
-    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: await seal(obj) }) });
+    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: await seal(Object.assign({ pub: isPublic }, obj)) }) });
     if (!r.ok) throw new Error(r.status === 429 ? 'Rate limited by the free relay — wait a moment.' : 'Send failed (' + r.status + ')');
   }
 
   // Validate the code against the room's recent (encrypted) history.
   // 'ok' = at least one message decrypts; 'wrong' = room has encrypted messages but none decrypt; 'new' = room empty.
   async function checkCode(k) {
+    let res = await checkCodeOnce(k);
+    // the relay can take a moment to make brand-new messages visible; double-check before declaring a room new
+    if (res.state === 'new') { await new Promise(r => setTimeout(r, 1500)); res = await checkCodeOnce(k); }
+    return res;
+  }
+  async function checkCodeOnce(k) {
     const r = await fetch(RELAY + '/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
     if (!r.ok) throw new Error('Could not reach the chat relay (' + r.status + '). Try again.');
     const lines = (await r.text()).split('\n').filter(Boolean);
@@ -242,38 +470,59 @@
       let n; try { n = JSON.parse(line); } catch { continue; }
       if (n.event !== 'message') continue;
       const p = await open(n.message, k);
-      if (p) return 'ok';
+      if (p) return { state: 'ok', pub: typeof p.pub === 'boolean' ? p.pub : undefined };
       if (p === false) ours++;
     }
-    return ours ? 'wrong' : 'new';
+    return { state: ours ? 'wrong' : 'new' };
+  }
+
+  function leaveRoom() {
+    if (es) { es.close(); es = null; }
+    clearInterval(heartbeat);
+    if (room && key) saveMyRoom(room, { seen: Date.now() });
+    key = null; topic = null; seen.clear(); historyIds.clear();
+    unread = 0; panelUnread = 0; updateTitle(); renderToggle();
+    $('messages').textContent = '';
+    $('roomsPane').classList.remove('on');
+    placeRoomLists('roomsHome');
+    $('chat').classList.remove('on'); $('join').classList.add('on');
+    $('code').value = '';
+    setStatus(false, 'chat offline');
+    renderRooms();
   }
 
   $('joinForm').addEventListener('submit', async e => {
     e.preventDefault();
     $('err').textContent = '';
-    name = clean($('name').value).slice(0, 32);
+    const newName = clean($('name').value).slice(0, 32);
     const roomRaw = clean($('roomIn').value), code = $('code').value;
-    if (!name) { $('err').textContent = 'Please enter your name.'; return; }
+    if (!newName) { $('err').textContent = 'Please enter your name.'; return; }
     if (!roomRaw) { $('err').textContent = 'Please enter a room.'; return; }
     if (!code) { $('err').textContent = 'Please enter the room code.'; return; }
-    room = slug(roomRaw);
+    const r = slug(roomRaw);
     initAudio(); if (notifyOn) askPermission().then(() => { if (key) renderBell(); }); // inside the click gesture
     const btn = $('joinBtn'); btn.disabled = true; btn.textContent = 'Checking code…';
     try {
-      topic = APP + '-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('room/' + room))).slice(0, 32);
-      const k = await deriveKey(room, code);
-      const state = await checkCode(k);
-      if (state === 'wrong') { $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
-      key = k; joinedAt = Date.now(); renderBell();
+      const t = await topicFor(r);
+      const k = await deriveKey(r, code);
+      topic = t;
+      const { state, pub } = await checkCode(k);
+      if (state === 'wrong') { topic = null; $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
+      name = newName; room = r; key = k; joinedAt = Date.now(); isPublic = $('listPublic').checked && pub !== false; renderBell();
       localStorage.setItem('chat-name', name);
+      saveMyRoom(room, { joined: Date.now(), seen: Date.now(), public: isPublic });
       history.replaceState(null, '', '#room=' + encodeURIComponent(room));
       $('roomName').textContent = room; $('meName').textContent = name;
-      $('join').style.display = 'none'; $('chat').style.display = 'flex';
+      $('join').classList.remove('on'); $('chat').classList.add('on');
       addSys(state === 'new'
         ? 'New room created — your code is now its code. Messages from the last ~12h are shown; nothing is stored long-term.'
         : 'You joined as ' + name + '. Messages from the last ~12h are shown; nothing is stored long-term.');
-      connect(); $('text').focus();
+      if (pub === false) addSys('This room is private — it isn\'t shown in the public room list.');
+      else if (!isPublic) addSys('This room is now private — it won\'t be shown in the public room list.');
+      connect(); $('text').focus(); renderRooms();
       publish({ t: state === 'new' ? 'create' : 'join', id: myId, name, ts: Date.now() }).catch(err => addSys(err.message));
+      if (isPublic) { announce('room'); heartbeat = setInterval(() => announce('room'), HEARTBEAT_MS); }
+      else announce('unlist');
     } catch (err) {
       $('err').textContent = err.message || 'Something went wrong. Try again.';
     } finally { btn.disabled = false; btn.textContent = 'Join'; }
@@ -293,7 +542,20 @@
     try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied — send the code separately'; } catch { prompt('Invite link (share the code separately):', link); }
     setTimeout(() => $('copy').textContent = 'Copy invite link (no code)', 2500);
   });
-  $('leave').addEventListener('click', () => { if (es) es.close(); location.reload(); });
+  $('leave').addEventListener('click', () => { leaveRoom(); $('code').focus(); });
+  window.addEventListener('pagehide', () => { if (room && key) saveMyRoom(room, { seen: Date.now() }); });
+
+  // ---- start ----
+  const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
+  $('roomIn').value = hashRoom ? slug(hashRoom) : '';
+  $('name').value = localStorage.getItem('chat-name') || '';
+  if (hashRoom) {
+    const m = myRooms()[slug(hashRoom)]; if (m) $('listPublic').checked = m.public !== false;
+    if (narrow()) document.body.classList.add('drawerOpen'); else document.body.classList.remove('collapsed');
+    ($('name').value ? $('code') : $('name')).focus();
+  }
+  placeRoomLists('roomsHome');
+  renderToggle(); renderRooms();
 })();
 </script>
 </body>

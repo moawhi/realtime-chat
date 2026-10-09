@@ -1,0 +1,2549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offsuit House</title>
+<style>
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("fonts/inter-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #FFF;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #game {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: default;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  const FONT = '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const COLORS = {
+    bg: "#000000",
+    panel: "#171717",
+    border: "#262626",
+    white: "#FFFFFF",
+    muted: "#8A8A8A",
+    accent: "#FFFF7D",
+    soft: "#B5CBE3",
+    ground: "#111111",
+    groundLine: "#262626",
+    p1: "#B5CBE3",
+    p1Dark: "#7A96B0",
+    p2: "#E5C9A8",
+    p2Dark: "#B89672",
+    hpEmpty: "#262626",
+    hpLow: "#FFFF7D",
+    redSuit: "#E5C9A8",
+    blkSuit: "#B5CBE3",
+    road: "#0E0E0E",
+    sidewalk: "#1A1A1A",
+    lamp: "#FFFF7D",
+    foliage: "#2A3A2A",
+    planter: "#1F1F1F",
+  };
+
+  const RANK_LABELS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+  const SUIT_GLYPHS = ["\u2660", "\u2665", "\u2666", "\u2663"];
+
+  let W = 0, H = 0, groundY = 0;
+  let lastTime = 0;
+  let startPulse = 0;
+  let flashAlpha = 0;
+  let particles = [];
+  let keys = Object.create(null);
+  let keysPressed = Object.create(null);
+
+  let scene = "house";
+
+  const DEF_BANK = 1000;
+  let bankChips = DEF_BANK;
+
+  const DEF_STREET = 8;
+  const DEF_DECISION = 12;
+  const DEF_START_STACK = 1000;
+  let pkStreetInterval = DEF_STREET;
+  let pkDecisionTimer = DEF_DECISION;
+  let pkStartStack = DEF_START_STACK;
+  let pkVsBot = true;
+  let pkTitleFocus = 0;
+
+  const WIN_SCORE = 5;
+  const MAX_HP = 100;
+  const BASE_DMG = 22;
+  const GRAVITY = 2200;
+  const MOVE_SPEED = 420;
+  const JUMP_VEL = -780;
+  const ATTACK_DURATION = 0.22;
+  const ATTACK_COOLDOWN = 0.45;
+  const HIT_STUN = 0.28;
+  const INVULN = 0.55;
+  const KNOCKBACK_X = 520;
+  const KNOCKBACK_Y = -280;
+  const PLAYER_W = 56;
+  const PLAYER_H = 88;
+  const ATTACK_W = 58;
+  const ATTACK_H = 44;
+  const GROUND_PAD = 90;
+  const ALLIN_VULN = 0.85;
+  const DEF_ROUND_SECONDS = 55;
+  let duelVsBot = true;
+  let duelTitleFocus = 0;
+  let duelWager = 0;
+  let duelRoundSec = DEF_ROUND_SECONDS;
+  let duelScores = { 1: 0, 2: 0 };
+  let duelRoundTime = DEF_ROUND_SECONDS;
+  let duelRoundWinner = null;
+  let duelMatchWinner = null;
+
+  const HOUSE_PLAYER_R = 14;
+  let housePlayer = { x: 0.5, y: 0.78 };
+  let nearDoor = null;
+  let housePromptPulse = 0;
+  const CAR_HIT_PENALTY = 40;
+  const CAR_INVULN = 1.05;
+  let houseCars = [];
+  let houseCarInvuln = 0;
+  let houseHitFlash = 0;
+  let houseCarSpawnT = 0;
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  window.addEventListener("keydown", (e) => {
+    if (!keys[e.code]) keysPressed[e.code] = true;
+    keys[e.code] = true;
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.code)) {
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+  window.addEventListener("blur", () => { keys = Object.create(null); keysPressed = Object.create(null); });
+
+  function held(codes) {
+    for (let i = 0; i < codes.length; i++) if (keys[codes[i]]) return true;
+    return false;
+  }
+  function just(codes) {
+    for (let i = 0; i < codes.length; i++) if (keysPressed[codes[i]]) return true;
+    return false;
+  }
+  function clearPressed() { keysPressed = Object.create(null); }
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    groundY = H - GROUND_PAD;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function roundRect(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawPanel(x, y, w, h, r, stroke) {
+    roundRect(x, y, w, h, r || 20);
+    ctx.fillStyle = COLORS.panel;
+    ctx.fill();
+    ctx.strokeStyle = stroke || COLORS.border;
+    ctx.lineWidth = stroke === COLORS.accent ? 2.5 : 1.5;
+    roundRect(x, y, w, h, r || 20);
+    ctx.stroke();
+  }
+
+  function spawnBurstAt(cx, cy, color) {
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 100 + Math.random() * 320;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+        life: 0.35 + Math.random() * 0.45, max: 0.85,
+        r: 2 + Math.random() * 4, color,
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const pt = particles[i];
+      pt.life -= dt;
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+      pt.vy += 500 * dt;
+      if (pt.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function drawParticles() {
+    for (let i = 0; i < particles.length; i++) {
+      const pt = particles[i];
+      ctx.globalAlpha = Math.max(0, pt.life / pt.max) * 0.85;
+      ctx.fillStyle = pt.color;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function formatChips(n) {
+    return Math.max(0, Math.round(n)).toLocaleString("en-US");
+  }
+
+  function drawBankHud() {
+    const chipW = 160;
+    roundRect(W - 24 - chipW, 10, chipW, 36, 12);
+    ctx.fillStyle = COLORS.bg;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.accent;
+    ctx.lineWidth = 1.5;
+    roundRect(W - 24 - chipW, 10, chipW, 36, 12);
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.accent;
+    ctx.font = "700 16px " + FONT;
+    ctx.fillText("\u25C6 " + formatChips(bankChips), W - 24 - chipW / 2, 34);
+  }
+
+  function roomName(id) {
+    const m = {
+      poker: "Poker Room", duel: "Duel Room", blackjack: "Blackjack",
+      memory: "Memory Lounge", showdown: "Showdown",
+    };
+    return m[id] || id;
+  }
+
+  // ========== HOUSE / WORLD MAP ==========
+  function houseLayout() {
+    const padX = Math.max(36, W * 0.05);
+    const padY = Math.max(64, H * 0.09);
+    const area = { x: padX, y: padY, w: W - padX * 2, h: H - padY - 52 };
+    const roomW = Math.min(168, Math.max(130, area.w * 0.17));
+    const roomH = Math.min(148, Math.max(112, area.h * 0.34));
+    const gapX = Math.max(28, (area.w - roomW * 3) / 4);
+    const topY = area.y + area.h * 0.08;
+    const botY = area.y + area.h * 0.48;
+
+    function mk(id, label, sub, x, y, accentKey, icon, doorFace) {
+      const r = { id, label, sub, x, y, w: roomW, h: roomH, accentKey, icon, doorFace: doorFace || "down" };
+      // top-row doors face courtyard (down); bottom-row doors face courtyard (up)
+      if (r.doorFace === "up") {
+        r.door = { x: x + roomW * 0.28, y: y - 20, w: roomW * 0.44, h: 26 };
+      } else {
+        r.door = { x: x + roomW * 0.28, y: y + roomH - 6, w: roomW * 0.44, h: 26 };
+      }
+      return r;
+    }
+
+    const poker = mk("poker", "POKER", "Chip War",
+      area.x + gapX, topY, "soft", "spade", "down");
+    const blackjack = mk("blackjack", "BLACKJACK", "21 vs Bot",
+      area.x + gapX * 2 + roomW, topY, "accent", "bj", "down");
+    const duel = mk("duel", "DUEL", "Arena Fighter",
+      area.x + gapX * 3 + roomW * 2, topY, "p2", "fighter", "down");
+    const memory = mk("memory", "MEMORY", "Match Pair",
+      area.x + gapX + roomW * 0.35, botY, "soft", "mem", "up");
+    const showdown = mk("showdown", "SHOWDOWN", "High Card Race",
+      area.x + gapX * 2.2 + roomW * 1.35, botY, "accent", "race", "up");
+
+    const plaza = {
+      x: area.x + area.w * 0.18,
+      y: area.y + area.h * 0.38,
+      w: area.w * 0.64,
+      h: area.h * 0.12,
+    };
+    const road = {
+      x: area.x + 20,
+      y: area.y + area.h * 0.72,
+      w: area.w - 40,
+      h: Math.max(36, area.h * 0.1),
+    };
+    const sidewalkN = {
+      x: road.x, y: road.y - 18, w: road.w, h: 18,
+    };
+    const sidewalkS = {
+      x: road.x, y: road.y + road.h, w: road.w, h: 14,
+    };
+
+    return {
+      area, rooms: [poker, blackjack, duel, memory, showdown],
+      poker, blackjack, duel, memory, showdown,
+      plaza, road, sidewalkN, sidewalkS, roomW, roomH,
+    };
+  }
+
+  function houseWorldPos() {
+    const L = houseLayout();
+    return {
+      x: L.area.x + housePlayer.x * L.area.w,
+      y: L.area.y + housePlayer.y * L.area.h,
+    };
+  }
+
+  function enterRoom(id) {
+    keys = Object.create(null);
+    if (id === "poker") { pkTitleFocus = 0; scene = "poker_title"; }
+    else if (id === "duel") { duelTitleFocus = 0; duelWager = 0; scene = "duel_title"; }
+    else if (id === "blackjack") { bjTitleFocus = 0; bjWager = Math.min(50, bankChips); scene = "bj_title"; }
+    else if (id === "memory") { memTitleFocus = 0; memWager = 0; scene = "mem_title"; }
+    else if (id === "showdown") { sdTitleFocus = 0; sdWager = Math.min(25, bankChips); scene = "sd_title"; }
+  }
+
+  function leaveToHouse() {
+    keys = Object.create(null);
+    particles = [];
+    flashAlpha = 0;
+    scene = "house";
+    housePlayer.x = 0.5;
+    housePlayer.y = 0.78;
+    nearDoor = null;
+    houseCarInvuln = 0;
+    houseHitFlash = 0;
+  }
+
+  function spawnHouseCar(L, dir) {
+    const lanePad = Math.max(6, L.road.h * 0.12);
+    const carH = Math.max(14, L.road.h * 0.36);
+    const carW = carH * 2.35;
+    const yNorth = L.road.y + lanePad + carH / 2;
+    const ySouth = L.road.y + L.road.h - lanePad - carH / 2;
+    const palette = [COLORS.accent, COLORS.soft, COLORS.p2, COLORS.p1];
+    const color = palette[(Math.random() * palette.length) | 0];
+    const speed = 520 + Math.random() * 320;
+    const x = dir > 0 ? L.road.x - carW - 8 : L.road.x + L.road.w + 8;
+    const y = dir > 0 ? ySouth : yNorth;
+    houseCars.push({
+      x: x, y: y, w: carW, h: carH, vx: dir * speed, dir: dir, color: color,
+      accent: color === COLORS.accent ? COLORS.white : COLORS.accent,
+    });
+  }
+
+  function updateHouseCars(dt, L) {
+    houseCarSpawnT -= dt;
+    if (houseCarSpawnT <= 0) {
+      const goingRight = houseCars.filter(function(c) { return c.dir > 0; }).length;
+      const goingLeft = houseCars.filter(function(c) { return c.dir < 0; }).length;
+      if (goingRight < 3) spawnHouseCar(L, 1);
+      if (goingLeft < 3) spawnHouseCar(L, -1);
+      houseCarSpawnT = 0.35 + Math.random() * 0.55;
+    }
+    for (let i = houseCars.length - 1; i >= 0; i--) {
+      const c = houseCars[i];
+      c.x += c.vx * dt;
+      const off = c.dir > 0
+        ? c.x > L.road.x + L.road.w + c.w + 20
+        : c.x + c.w < L.road.x - 20;
+      if (off) houseCars.splice(i, 1);
+    }
+  }
+
+  function drawHouseCar(c) {
+    const x = c.x, y = c.y - c.h / 2, w = c.w, h = c.h;
+    roundRect(x, y, w, h, 5);
+    ctx.fillStyle = c.color;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1.5;
+    roundRect(x, y, w, h, 5);
+    ctx.stroke();
+    const wx = c.dir > 0 ? x + w * 0.55 : x + w * 0.12;
+    roundRect(wx, y + 3, w * 0.32, h - 6, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fill();
+    const hx = c.dir > 0 ? x + w - 5 : x + 2;
+    ctx.fillStyle = c.accent;
+    ctx.fillRect(hx, y + h * 0.25, 3, h * 0.5);
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(x + w * 0.2, y + h * 0.42, w * 0.35, 2);
+  }
+
+  function hitByCar(pos, c) {
+    const half = HOUSE_PLAYER_R * 0.85;
+    return pos.x + half > c.x && pos.x - half < c.x + c.w &&
+      pos.y + half > c.y - c.h / 2 && pos.y - half < c.y + c.h / 2;
+  }
+
+  function applyCarHit(pos) {
+    if (houseCarInvuln > 0) return;
+    bankChips = Math.max(0, bankChips - CAR_HIT_PENALTY);
+    houseCarInvuln = CAR_INVULN;
+    houseHitFlash = 0.45;
+    flashAlpha = Math.max(flashAlpha, 0.28);
+    spawnBurstAt(pos.x, pos.y, COLORS.accent);
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 60 + Math.random() * 140;
+      particles.push({
+        x: pos.x, y: pos.y,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
+        life: 0.25 + Math.random() * 0.25, max: 0.5,
+        r: 2 + Math.random() * 2, color: COLORS.p2,
+      });
+    }
+  }
+
+  function updateHouse(dt) {
+    housePromptPulse += dt;
+    if (houseCarInvuln > 0) houseCarInvuln -= dt;
+    if (houseHitFlash > 0) houseHitFlash -= dt;
+    const speed = 0.52;
+    let dx = 0, dy = 0;
+    if (held(["KeyA", "ArrowLeft"])) dx -= 1;
+    if (held(["KeyD", "ArrowRight"])) dx += 1;
+    if (held(["KeyW", "ArrowUp"])) dy -= 1;
+    if (held(["KeyS", "ArrowDown"])) dy += 1;
+    if (dx || dy) {
+      const len = Math.hypot(dx, dy) || 1;
+      let nx = housePlayer.x + (dx / len) * speed * dt;
+      let ny = housePlayer.y + (dy / len) * speed * dt;
+      nx = clamp(nx, 0.035, 0.965);
+      ny = clamp(ny, 0.06, 0.94);
+      // soft block through room bodies (doors still enterable)
+      const L = houseLayout();
+      const px = L.area.x + nx * L.area.w;
+      const py = L.area.y + ny * L.area.h;
+      let blocked = false;
+      for (const room of L.rooms) {
+        const topClear = room.doorFace === "up" ? 28 : 10;
+        const botClear = room.doorFace === "up" ? 10 : 28;
+        const inBody = px > room.x + 8 && px < room.x + room.w - 8 &&
+          py > room.y + topClear && py < room.y + room.h - botClear;
+        const nearD = px > room.door.x - 6 && px < room.door.x + room.door.w + 6 &&
+          py > room.door.y - 18 && py < room.door.y + room.door.h + 10;
+        if (inBody && !nearD) { blocked = true; break; }
+      }
+      if (!blocked) { housePlayer.x = nx; housePlayer.y = ny; }
+      else {
+        // try slide axes
+        const tx = L.area.x + nx * L.area.w;
+        const ty = L.area.y + housePlayer.y * L.area.h;
+        let okX = true;
+        for (const room of L.rooms) {
+          const topClear = room.doorFace === "up" ? 28 : 10;
+          const botClear = room.doorFace === "up" ? 10 : 28;
+          const inBody = tx > room.x + 8 && tx < room.x + room.w - 8 &&
+            ty > room.y + topClear && ty < room.y + room.h - botClear;
+          const nearD = tx > room.door.x - 6 && tx < room.door.x + room.door.w + 6 &&
+            ty > room.door.y - 18 && ty < room.door.y + room.door.h + 10;
+          if (inBody && !nearD) { okX = false; break; }
+        }
+        if (okX) housePlayer.x = nx;
+        const sx = L.area.x + housePlayer.x * L.area.w;
+        const sy = L.area.y + ny * L.area.h;
+        let okY = true;
+        for (const room of L.rooms) {
+          const topClear = room.doorFace === "up" ? 28 : 10;
+          const botClear = room.doorFace === "up" ? 10 : 28;
+          const inBody = sx > room.x + 8 && sx < room.x + room.w - 8 &&
+            sy > room.y + topClear && sy < room.y + room.h - botClear;
+          const nearD = sx > room.door.x - 6 && sx < room.door.x + room.door.w + 6 &&
+            sy > room.door.y - 18 && sy < room.door.y + room.door.h + 10;
+          if (inBody && !nearD) { okY = false; break; }
+        }
+        if (okY) housePlayer.y = ny;
+      }
+    }
+    if (just(["Minus", "BracketLeft"])) bankChips = clamp(bankChips - 100, 100, 99999);
+    if (just(["Equal", "BracketRight"])) bankChips = clamp(bankChips + 100, 100, 99999);
+
+    const L = houseLayout();
+    const pos = houseWorldPos();
+    nearDoor = null;
+    for (const room of L.rooms) {
+      const d = room.door;
+      const cx = d.x + d.w / 2, cy = d.y + d.h / 2;
+      if (Math.hypot(pos.x - cx, pos.y - cy) < 44) { nearDoor = room.id; break; }
+      if (pos.x > d.x - 12 && pos.x < d.x + d.w + 12 && pos.y > d.y - 22 && pos.y < d.y + d.h + 22) {
+        nearDoor = room.id; break;
+      }
+    }
+    for (const room of L.rooms) {
+      if (pos.x > room.door.x - 4 && pos.x < room.door.x + room.door.w + 4 &&
+          pos.y > room.door.y - 8 && pos.y < room.door.y + room.door.h + 6) {
+        enterRoom(room.id);
+        return;
+      }
+    }
+    if (nearDoor && just(["Enter", "KeyE", "Space"])) enterRoom(nearDoor);
+
+    updateHouseCars(dt, L);
+    if (houseCarInvuln <= 0) {
+      for (let ci = 0; ci < houseCars.length; ci++) {
+        if (hitByCar(pos, houseCars[ci])) { applyCarHit(pos); break; }
+      }
+    }
+  }
+
+  function drawTree(x, y, s) {
+    const sc = s || 1;
+    roundRect(x - 5 * sc, y - 4 * sc, 10 * sc, 14 * sc, 3);
+    ctx.fillStyle = COLORS.planter;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y - 14 * sc, 16 * sc, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.foliage;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x - 8 * sc, y - 10 * sc, 10 * sc, 0, Math.PI * 2);
+    ctx.arc(x + 8 * sc, y - 10 * sc, 10 * sc, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawLamp(x, y) {
+    ctx.fillStyle = COLORS.border;
+    ctx.fillRect(x - 2, y - 36, 4, 36);
+    ctx.beginPath();
+    ctx.arc(x, y - 40, 7, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,125,0.18)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y - 40, 4, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.lamp;
+    ctx.fill();
+  }
+
+  function drawPlanter(x, y, w) {
+    roundRect(x, y, w, 14, 4);
+    ctx.fillStyle = COLORS.planter;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1;
+    roundRect(x, y, w, 14, 4);
+    ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(x + w * (0.25 + i * 0.25), y + 2, 5, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.foliage;
+      ctx.fill();
+    }
+  }
+
+  function drawSceneryBuilding(x, y, w, h) {
+    roundRect(x, y, w, h, 6);
+    ctx.fillStyle = "#0A0A0A";
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1;
+    roundRect(x, y, w, h, 6);
+    ctx.stroke();
+    const cols = Math.max(2, Math.floor(w / 22));
+    const rows = Math.max(1, Math.floor(h / 26));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const wx = x + 8 + c * ((w - 16) / cols);
+        const wy = y + 10 + r * ((h - 18) / rows);
+        roundRect(wx, wy, 8, 10, 2);
+        ctx.fillStyle = (c + r) % 3 === 0 ? "rgba(181,203,227,0.12)" : "rgba(38,38,38,0.8)";
+        ctx.fill();
+      }
+    }
+  }
+
+  function strokeWalkSeg(x1, y1, x2, y2, width) {
+    ctx.strokeStyle = COLORS.sidewalk;
+    ctx.lineWidth = width || 16;
+    ctx.lineCap = "square";
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    // subtle center guide (orthogonal only)
+    ctx.strokeStyle = "rgba(38,38,38,0.55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 7]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /** Right-angle walkway: vertical from door, then horizontal into hub. */
+  function drawOrthoWalk(doorX, doorY, hubX, hubY, width) {
+    const w = width || 16;
+    // vertical leg aligned to door
+    if (Math.abs(doorY - hubY) > 1) strokeWalkSeg(doorX, doorY, doorX, hubY, w);
+    // horizontal leg along hub
+    if (Math.abs(doorX - hubX) > 1) strokeWalkSeg(doorX, hubY, hubX, hubY, w);
+  }
+
+  function drawHouseRoom(room) {
+    const accent = COLORS[room.accentKey] || COLORS.soft;
+    const hot = nearDoor === room.id;
+    // short door apron toward hub
+    const doorCx = room.door.x + room.door.w / 2;
+    const apronFrom = room.doorFace === "up" ? room.door.y : room.door.y + room.door.h;
+    const apronTo = room.doorFace === "up" ? room.door.y - 10 : room.door.y + room.door.h + 10;
+    ctx.strokeStyle = hot ? "rgba(255,255,125,0.28)" : COLORS.sidewalk;
+    ctx.lineWidth = 16;
+    ctx.lineCap = "square";
+    ctx.beginPath();
+    ctx.moveTo(doorCx, apronFrom);
+    ctx.lineTo(doorCx, apronTo);
+    ctx.stroke();
+
+    roundRect(room.x, room.y, room.w, room.h, 16);
+    ctx.fillStyle = "#0A0A0A";
+    ctx.fill();
+    ctx.strokeStyle = hot ? COLORS.accent : COLORS.border;
+    ctx.lineWidth = hot ? 2.5 : 1.5;
+    roundRect(room.x, room.y, room.w, room.h, 16);
+    ctx.stroke();
+
+    // roof band
+    roundRect(room.x + 1, room.y + 1, room.w - 2, 28, 14);
+    ctx.fillStyle = COLORS.panel;
+    ctx.fill();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = accent;
+    ctx.font = "700 15px " + FONT;
+    ctx.fillText(room.label, room.x + room.w / 2, room.y + 20);
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "500 11px " + FONT;
+    ctx.fillText(room.sub, room.x + room.w / 2, room.y + 48);
+
+    // icon area
+    const ix = room.x + room.w / 2, iy = room.y + room.h * 0.58;
+    if (room.icon === "spade") {
+      ctx.fillStyle = COLORS.soft;
+      ctx.font = "600 32px " + FONT;
+      ctx.fillText("\u2660", ix, iy);
+    } else if (room.icon === "bj") {
+      ctx.fillStyle = COLORS.accent;
+      ctx.font = "700 28px " + FONT;
+      ctx.fillText("21", ix, iy);
+    } else if (room.icon === "fighter") {
+      ctx.fillStyle = COLORS.p2;
+      roundRect(ix - 12, iy - 22, 24, 30, 7);
+      ctx.fill();
+    } else if (room.icon === "mem") {
+      roundRect(ix - 28, iy - 18, 22, 30, 5);
+      ctx.fillStyle = COLORS.panel; ctx.fill();
+      ctx.strokeStyle = COLORS.soft; ctx.lineWidth = 1.5;
+      roundRect(ix - 28, iy - 18, 22, 30, 5); ctx.stroke();
+      roundRect(ix + 6, iy - 18, 22, 30, 5);
+      ctx.fillStyle = COLORS.panel; ctx.fill();
+      ctx.strokeStyle = COLORS.accent; ctx.lineWidth = 1.5;
+      roundRect(ix + 6, iy - 18, 22, 30, 5); ctx.stroke();
+    } else if (room.icon === "race") {
+      ctx.fillStyle = COLORS.accent;
+      ctx.font = "700 26px " + FONT;
+      ctx.fillText("A", ix - 14, iy);
+      ctx.fillStyle = COLORS.soft;
+      ctx.fillText("K", ix + 14, iy);
+    }
+
+    const d = room.door;
+    roundRect(d.x, d.y, d.w, d.h, 5);
+    ctx.fillStyle = hot ? COLORS.accent : COLORS.border;
+    ctx.fill();
+    ctx.fillStyle = COLORS.bg;
+    ctx.font = "700 10px " + FONT;
+    ctx.fillText("ENTER", d.x + d.w / 2, d.y + d.h * 0.72);
+  }
+
+  function drawHouse() {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, W, H);
+    const L = houseLayout();
+
+    // outer world frame
+    roundRect(L.area.x, L.area.y, L.area.w, L.area.h, 26);
+    ctx.fillStyle = "#0B0B0B";
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 2;
+    roundRect(L.area.x, L.area.y, L.area.w, L.area.h, 26);
+    ctx.stroke();
+
+    // distant skyline buildings
+    const skyY = L.area.y + 10;
+    drawSceneryBuilding(L.area.x + 18, skyY + 8, 70, 48);
+    drawSceneryBuilding(L.area.x + 100, skyY, 54, 56);
+    drawSceneryBuilding(L.area.x + L.area.w - 160, skyY + 6, 64, 50);
+    drawSceneryBuilding(L.area.x + L.area.w - 86, skyY + 2, 58, 54);
+
+    // plaza / courtyard
+    roundRect(L.plaza.x, L.plaza.y, L.plaza.w, L.plaza.h, 14);
+    ctx.fillStyle = COLORS.panel;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1.5;
+    roundRect(L.plaza.x, L.plaza.y, L.plaza.w, L.plaza.h, 14);
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "600 12px " + FONT;
+    ctx.fillText("COURTYARD", L.plaza.x + L.plaza.w / 2, L.plaza.y + L.plaza.h / 2 + 4);
+
+    // orthogonal walkways: vertical from each door to hub Y, then into plaza
+    const hubY = L.plaza.y + L.plaza.h / 2;
+    const hubLeft = L.plaza.x + 12;
+    const hubRight = L.plaza.x + L.plaza.w - 12;
+    // continuous horizontal hub strip under/through courtyard
+    strokeWalkSeg(hubLeft, hubY, hubRight, hubY, 18);
+    for (const room of L.rooms) {
+      const dx = room.door.x + room.door.w / 2;
+      // path leaves the door toward the courtyard hub
+      const dy = room.doorFace === "up"
+        ? room.door.y - 8
+        : room.door.y + room.door.h + 8;
+      let meetY = hubY;
+      if (dy < L.plaza.y) meetY = L.plaza.y + 2;
+      else if (dy > L.plaza.y + L.plaza.h) meetY = L.plaza.y + L.plaza.h - 2;
+      const meetX = clamp(dx, hubLeft, hubRight);
+      drawOrthoWalk(dx, dy, meetX, meetY, 16);
+    }
+
+    // road + sidewalks
+    roundRect(L.sidewalkN.x, L.sidewalkN.y, L.sidewalkN.w, L.sidewalkN.h, 4);
+    ctx.fillStyle = COLORS.sidewalk; ctx.fill();
+    roundRect(L.road.x, L.road.y, L.road.w, L.road.h, 6);
+    ctx.fillStyle = COLORS.road; ctx.fill();
+    // dashed center line
+    ctx.strokeStyle = "rgba(255,255,125,0.22)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 12]);
+    ctx.beginPath();
+    ctx.moveTo(L.road.x + 16, L.road.y + L.road.h / 2);
+    ctx.lineTo(L.road.x + L.road.w - 16, L.road.y + L.road.h / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    roundRect(L.sidewalkS.x, L.sidewalkS.y, L.sidewalkS.w, L.sidewalkS.h, 4);
+    ctx.fillStyle = COLORS.sidewalk; ctx.fill();
+
+    // sponsor highway cars (both directions)
+    for (let ci = 0; ci < houseCars.length; ci++) drawHouseCar(houseCars[ci]);
+
+    // lamps along road
+    const lampYs = L.road.y - 2;
+    drawLamp(L.road.x + 40, lampYs);
+    drawLamp(L.road.x + L.road.w * 0.35, lampYs);
+    drawLamp(L.road.x + L.road.w * 0.65, lampYs);
+    drawLamp(L.road.x + L.road.w - 40, lampYs);
+
+    // trees / planters
+    drawTree(L.area.x + 48, L.plaza.y + 8, 0.9);
+    drawTree(L.area.x + L.area.w - 48, L.plaza.y + 8, 0.9);
+    drawPlanter(L.plaza.x + 20, L.plaza.y - 18, 56);
+    drawPlanter(L.plaza.x + L.plaza.w - 76, L.plaza.y - 18, 56);
+    drawTree(L.road.x + L.road.w * 0.2, L.road.y + L.road.h + 28, 0.75);
+    drawTree(L.road.x + L.road.w * 0.8, L.road.y + L.road.h + 28, 0.75);
+
+    // rooms
+    for (const room of L.rooms) drawHouseRoom(room);
+
+    // player
+    const pos = houseWorldPos();
+    const carBlink = houseCarInvuln > 0 && Math.floor(houseCarInvuln * 14) % 2 === 0;
+    if (carBlink) ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, HOUSE_PLAYER_R + 5, 0, Math.PI * 2);
+    ctx.fillStyle = houseHitFlash > 0 ? "rgba(255,255,125,0.35)" : "rgba(255,255,125,0.14)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, HOUSE_PLAYER_R, 0, Math.PI * 2);
+    ctx.fillStyle = houseHitFlash > 0 ? COLORS.accent : COLORS.soft;
+    ctx.fill();
+    ctx.fillStyle = COLORS.bg;
+    ctx.beginPath();
+    ctx.arc(pos.x - 4, pos.y - 3, 3, 0, Math.PI * 2);
+    ctx.arc(pos.x + 4, pos.y - 3, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // top HUD bar
+    ctx.fillStyle = COLORS.panel;
+    ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = COLORS.border;
+    ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(W, 56); ctx.stroke();
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "500 12px " + FONT;
+    ctx.fillText("OFFSUIT GAMES", 24, 22);
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "700 18px " + FONT;
+    ctx.fillText("Offsuit House", 24, 44);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "400 13px " + FONT;
+    ctx.fillText("Dead simple, deliberately designed.", W / 2, 34);
+
+    drawBankHud();
+
+    if (houseHitFlash > 0) {
+      ctx.fillStyle = "rgba(255,255,125," + (houseHitFlash * 0.55).toFixed(3) + ")";
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = "center";
+      ctx.fillStyle = COLORS.accent;
+      ctx.font = "700 22px " + FONT;
+      ctx.fillText("-\u25C6 " + CAR_HIT_PENALTY, W / 2, H * 0.42);
+    }
+
+    if (nearDoor) {
+      const pulse = 0.55 + 0.45 * Math.sin(housePromptPulse * 4);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = COLORS.accent;
+      ctx.font = "600 16px " + FONT;
+      ctx.fillText("ENTER / E \u2014 enter " + roomName(nearDoor), W / 2, H - 24);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = "500 13px " + FONT;
+      ctx.fillText("WASD move  \u00B7  ortho walkways  \u00B7  avoid highway cars (-40)  \u00B7  ENTER / E enter  \u00B7  [ ] chips", W / 2, H - 24);
+    }
+  }
+
+  // ========== POKER CHIP WAR ==========
+  const EQUITY_SAMPLES = 200;
+  const SB = 10, BB = 20;
+  let pkState = "idle";
+  let pkDeck = [];
+  let pkHoles = { 1: [null, null], 2: [null, null] };
+  let pkBoard = [];
+  let pkStreet = 0;
+  let pkPot = 0;
+  let pkStacks = { 1: 0, 2: 0 };
+  let pkBetThisStreet = { 1: 0, 2: 0 };
+  let pkCurrentBet = 0;
+  let pkActor = 1;
+  let pkButton = 1;
+  let pkDecisionLeft = 0;
+  let pkStreetLeft = 0;
+  let pkDealTimer = 0;
+  let pkEquity = { 1: 0.5, 2: 0.5 };
+  let pkHandInfo = { 1: null, 2: null };
+  let pkFolded = 0;
+  let pkHandWinner = null;
+  let pkMsg = "";
+  let pkMsgT = 0;
+  let pkLastAction = "";
+  let pkHandsPlayed = 0;
+  let pkWaitingContinue = false;
+  let pkMinRaise = 0;
+  let pkActionsThisStreet = 0;
+  let pkBotActed = false;
+
+  function freshDeck() {
+    const d = [];
+    for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) {
+      d.push({ rank: r, suit: s, label: RANK_LABELS[r - 2], glyph: SUIT_GLYPHS[s], red: s === 1 || s === 2 });
+    }
+    return d;
+  }
+  function shuffleInPlace(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function drawFromDeck() { return pkDeck.pop(); }
+
+  function encodeScore(cat, a, b, c, d, e) {
+    return (((((cat * 15 + a) * 15 + b) * 15 + c) * 15 + d) * 15 + e);
+  }
+  function evalFive(c0, c1, c2, c3, c4) {
+    const ranks = [c0.rank, c1.rank, c2.rank, c3.rank, c4.rank].sort((a, b) => b - a);
+    const suits = [c0.suit, c1.suit, c2.suit, c3.suit, c4.suit];
+    const flush = suits[0] === suits[1] && suits[1] === suits[2] && suits[2] === suits[3] && suits[3] === suits[4];
+    let uniq = [];
+    for (let i = 0; i < 5; i++) if (!uniq.length || uniq[uniq.length - 1] !== ranks[i]) uniq.push(ranks[i]);
+    let straightHigh = 0;
+    if (uniq.length === 5) {
+      if (uniq[0] - uniq[4] === 4) straightHigh = uniq[0];
+      else if (uniq[0] === 14 && uniq[1] === 5 && uniq[2] === 4 && uniq[3] === 3 && uniq[4] === 2) straightHigh = 5;
+    }
+    const counts = Object.create(null);
+    for (let i = 0; i < 5; i++) counts[ranks[i]] = (counts[ranks[i]] || 0) + 1;
+    const groups = [];
+    for (const r in counts) groups.push({ rank: +r, n: counts[r] });
+    groups.sort((a, b) => b.n - a.n || b.rank - a.rank);
+    if (flush && straightHigh) return { cat: 8, score: encodeScore(8, straightHigh, 0, 0, 0, 0), name: "STRAIGHT FLUSH" };
+    if (groups[0].n === 4) return { cat: 7, score: encodeScore(7, groups[0].rank, groups[1].rank, 0, 0, 0), name: "QUADS" };
+    if (groups[0].n === 3 && groups[1].n === 2) return { cat: 6, score: encodeScore(6, groups[0].rank, groups[1].rank, 0, 0, 0), name: "FULL HOUSE" };
+    if (flush) return { cat: 5, score: encodeScore(5, ranks[0], ranks[1], ranks[2], ranks[3], ranks[4]), name: "FLUSH" };
+    if (straightHigh) return { cat: 4, score: encodeScore(4, straightHigh, 0, 0, 0, 0), name: "STRAIGHT" };
+    if (groups[0].n === 3) return { cat: 3, score: encodeScore(3, groups[0].rank, groups[1].rank, groups[2].rank, 0, 0), name: "TRIPS" };
+    if (groups[0].n === 2 && groups[1].n === 2) {
+      const hi = Math.max(groups[0].rank, groups[1].rank);
+      const lo = Math.min(groups[0].rank, groups[1].rank);
+      return { cat: 2, score: encodeScore(2, hi, lo, groups[2].rank, 0, 0), name: "TWO PAIR" };
+    }
+    if (groups[0].n === 2) return { cat: 1, score: encodeScore(1, groups[0].rank, groups[1].rank, groups[2].rank, groups[3].rank, 0), name: "PAIR" };
+    return { cat: 0, score: encodeScore(0, ranks[0], ranks[1], ranks[2], ranks[3], ranks[4]), name: "HIGH CARD" };
+  }
+  function bestHand(cards) {
+    const n = cards.length;
+    if (n < 5) {
+      const ranks = cards.map((c) => c.rank).sort((a, b) => b - a);
+      while (ranks.length < 5) ranks.push(0);
+      return { cat: 0, score: encodeScore(0, ranks[0], ranks[1], ranks[2], ranks[3], ranks[4]), name: "HIGH CARD" };
+    }
+    if (n === 5) return evalFive(cards[0], cards[1], cards[2], cards[3], cards[4]);
+    let best = null;
+    function comb(start, picked) {
+      if (picked.length === 5) {
+        const h = evalFive(cards[picked[0]], cards[picked[1]], cards[picked[2]], cards[picked[3]], cards[picked[4]]);
+        if (!best || h.score > best.score) best = h;
+        return;
+      }
+      for (let i = start; i < n; i++) { picked.push(i); comb(i + 1, picked); picked.pop(); }
+    }
+    comb(0, []);
+    return best;
+  }
+  function handLabel(info, holeCards) {
+    if (!info) return "\u2014";
+    if (pkStreet === 0 && holeCards && holeCards[0] && holeCards[1]) {
+      const a = holeCards[0], b = holeCards[1];
+      if (a.rank === b.rank) return "POCKET " + a.label + "s";
+      const hi = a.rank > b.rank ? a : b;
+      const lo = a.rank > b.rank ? b : a;
+      return hi.label + lo.label + (a.suit === b.suit ? "s" : "o");
+    }
+    return info.name;
+  }
+  function preflopStrength(h) {
+    if (!h[0] || !h[1]) return 0.35;
+    const r1 = h[0].rank, r2 = h[1].rank;
+    const suited = h[0].suit === h[1].suit;
+    const hi = Math.max(r1, r2), lo = Math.min(r1, r2);
+    let s;
+    if (r1 === r2) s = 0.50 + (hi - 2) * (0.35 / 12);
+    else {
+      s = 0.28 + (hi - 2) * 0.028 + (lo - 2) * 0.012;
+      if (suited) s += 0.04;
+      const gap = hi - lo;
+      if (gap === 1) s += 0.03; else if (gap === 2) s += 0.015; else if (gap >= 5) s -= 0.02;
+    }
+    return clamp(s, 0.18, 0.88);
+  }
+  function remainingCards() {
+    const used = new Set();
+    function mark(c) { if (c) used.add(c.rank + ":" + c.suit); }
+    mark(pkHoles[1][0]); mark(pkHoles[1][1]);
+    mark(pkHoles[2][0]); mark(pkHoles[2][1]);
+    for (let i = 0; i < pkBoard.length; i++) mark(pkBoard[i]);
+    const rem = [];
+    for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) {
+      if (!used.has(r + ":" + s)) rem.push({ rank: r, suit: s, label: RANK_LABELS[r - 2], glyph: SUIT_GLYPHS[s], red: s === 1 || s === 2 });
+    }
+    return rem;
+  }
+  function estimateEquity() {
+    const h1 = pkHoles[1], h2 = pkHoles[2];
+    if (!h1[0] || !h1[1] || !h2[0] || !h2[1]) { pkEquity[1] = 0.5; pkEquity[2] = 0.5; return; }
+    if (pkStreet === 0) {
+      const s1 = preflopStrength(h1), s2 = preflopStrength(h2), sum = s1 + s2;
+      pkEquity[1] = s1 / sum; pkEquity[2] = s2 / sum; return;
+    }
+    const need = 5 - pkBoard.length;
+    if (need <= 0) {
+      const e1 = bestHand([h1[0], h1[1], pkBoard[0], pkBoard[1], pkBoard[2], pkBoard[3], pkBoard[4]]);
+      const e2 = bestHand([h2[0], h2[1], pkBoard[0], pkBoard[1], pkBoard[2], pkBoard[3], pkBoard[4]]);
+      if (e1.score > e2.score) { pkEquity[1] = 1; pkEquity[2] = 0; }
+      else if (e2.score > e1.score) { pkEquity[1] = 0; pkEquity[2] = 1; }
+      else { pkEquity[1] = 0.5; pkEquity[2] = 0.5; }
+      return;
+    }
+    const rem = remainingCards();
+    let w1 = 0, w2 = 0, ties = 0;
+    const samples = Math.min(EQUITY_SAMPLES, 400);
+    for (let n = 0; n < samples; n++) {
+      shuffleInPlace(rem);
+      const b = pkBoard.slice();
+      for (let k = 0; k < need; k++) b.push(rem[k]);
+      const e1 = bestHand([h1[0], h1[1], b[0], b[1], b[2], b[3], b[4]]);
+      const e2 = bestHand([h2[0], h2[1], b[0], b[1], b[2], b[3], b[4]]);
+      if (e1.score > e2.score) w1++; else if (e2.score > e1.score) w2++; else ties++;
+    }
+    const total = w1 + w2 + ties;
+    pkEquity[1] = (w1 + ties * 0.5) / total;
+    pkEquity[2] = (w2 + ties * 0.5) / total;
+  }
+  function recomputePokerHands() {
+    for (const id of [1, 2]) {
+      const h = pkHoles[id];
+      if (!h[0] || !h[1]) { pkHandInfo[id] = null; continue; }
+      if (pkStreet === 0) pkHandInfo[id] = { cat: 0, score: 0, name: handLabel({ name: "" }, h) };
+      else pkHandInfo[id] = bestHand([h[0], h[1]].concat(pkBoard));
+    }
+    estimateEquity();
+  }
+  function streetName() { return ["PREFLOP", "FLOP", "TURN", "RIVER"][pkStreet] || "RIVER"; }
+  function setMsg(t) { pkMsg = t; pkMsgT = 2.2; }
+  function putChips(id, amount) {
+    const a = Math.min(amount, pkStacks[id]);
+    pkStacks[id] -= a; pkPot += a; pkBetThisStreet[id] += a;
+    return a;
+  }
+  function nextActorAfter(id) { return id === 1 ? 2 : 1; }
+  function resetStreetActionTrack() { pkActionsThisStreet = 0; pkBotActed = false; }
+
+  function startPokerSession() {
+    if (pkVsBot) {
+      pkStacks[1] = Math.min(pkStartStack, bankChips);
+      pkStacks[2] = pkStartStack;
+    } else {
+      pkStacks[1] = pkStartStack;
+      pkStacks[2] = pkStartStack;
+    }
+    pkButton = 1;
+    pkHandsPlayed = 0;
+    particles = [];
+    startPokerHand();
+    scene = "poker";
+  }
+  function cashOutPoker() {
+    if (pkVsBot) bankChips = pkStacks[1];
+    leaveToHouse();
+  }
+  function startPokerHand() {
+    if (pkStacks[1] < BB || pkStacks[2] < BB) {
+      pkState = "matchout";
+      pkHandWinner = pkStacks[1] >= BB ? 1 : 2;
+      setMsg(pkHandWinner === 1 ? "P1 takes the table" : (pkVsBot ? "Bot takes the table" : "P2 takes the table"));
+      return;
+    }
+    pkDeck = shuffleInPlace(freshDeck());
+    pkHoles = { 1: [drawFromDeck(), drawFromDeck()], 2: [drawFromDeck(), drawFromDeck()] };
+    pkBoard = [];
+    pkStreet = 0;
+    pkPot = 0;
+    pkBetThisStreet = { 1: 0, 2: 0 };
+    pkCurrentBet = 0;
+    pkFolded = 0;
+    pkHandWinner = null;
+    pkWaitingContinue = false;
+    pkMinRaise = BB;
+    pkDealTimer = 0.7;
+    pkState = "dealing";
+    pkHandsPlayed++;
+    const sbId = pkButton;
+    const bbId = pkButton === 1 ? 2 : 1;
+    putChips(sbId, SB);
+    putChips(bbId, BB);
+    pkCurrentBet = BB;
+    pkMinRaise = BB;
+    pkActor = sbId;
+    resetStreetActionTrack();
+    recomputePokerHands();
+    setMsg("Hand #" + pkHandsPlayed + "  \u00B7  " + streetName());
+  }
+  function beginDecide() {
+    pkDecisionLeft = pkDecisionTimer;
+    pkBotActed = false;
+    pkState = "decide";
+  }
+  function doFold(id) {
+    pkFolded = id;
+    const winner = id === 1 ? 2 : 1;
+    pkStacks[winner] += pkPot;
+    setMsg("P" + id + " folds  \u00B7  P" + winner + " wins " + formatChips(pkPot));
+    pkPot = 0;
+    pkHandWinner = winner;
+    pkLastAction = "P" + id + " FOLD";
+    pkState = "handend";
+    pkWaitingContinue = true;
+    spawnBurstAt(W / 2, H * 0.4, winner === 1 ? COLORS.p1 : COLORS.p2);
+  }
+  function goNextStreetOrShowdown() {
+    if (pkStreet >= 3) doShowdown();
+    else {
+      pkStreetLeft = pkStreetInterval;
+      pkState = "streetwait";
+    }
+  }
+  function doCheckCall(id) {
+    const need = pkCurrentBet - pkBetThisStreet[id];
+    if (need <= 0) {
+      pkLastAction = "P" + id + " CHECK";
+      pkActionsThisStreet++;
+      const other = nextActorAfter(id);
+      if (pkBetThisStreet[1] === pkBetThisStreet[2] && pkActionsThisStreet >= 2) goNextStreetOrShowdown();
+      else { pkActor = other; beginDecide(); }
+    } else {
+      putChips(id, need);
+      pkLastAction = "P" + id + " CALL " + formatChips(need);
+      pkActionsThisStreet++;
+      goNextStreetOrShowdown();
+    }
+  }
+  function doBetRaise(id) {
+    const needToCall = pkCurrentBet - pkBetThisStreet[id];
+    let raiseBy = pkCurrentBet === 0 ? Math.max(BB, Math.floor(pkPot * 0.5) || BB) : Math.max(pkMinRaise, BB);
+    const totalAdd = needToCall + raiseBy;
+    putChips(id, totalAdd);
+    const newBet = pkBetThisStreet[id];
+    const actualRaise = newBet - pkCurrentBet;
+    if (actualRaise > 0) pkMinRaise = actualRaise;
+    pkCurrentBet = newBet;
+    pkLastAction = (needToCall > 0 ? "P" + id + " RAISE to " : "P" + id + " BET ") + formatChips(pkCurrentBet);
+    pkActionsThisStreet++;
+    pkActor = nextActorAfter(id);
+    beginDecide();
+  }
+  function doShowdown() {
+    recomputePokerHands();
+    const e1 = bestHand([pkHoles[1][0], pkHoles[1][1]].concat(pkBoard));
+    const e2 = bestHand([pkHoles[2][0], pkHoles[2][1]].concat(pkBoard));
+    pkHandInfo[1] = e1; pkHandInfo[2] = e2;
+    let winner = 0;
+    if (e1.score > e2.score) winner = 1;
+    else if (e2.score > e1.score) winner = 2;
+    if (winner === 0) {
+      const half = Math.floor(pkPot / 2);
+      pkStacks[1] += half; pkStacks[2] += pkPot - half;
+      setMsg("SPLIT  \u00B7  " + e1.name);
+      pkHandWinner = 0;
+    } else {
+      pkStacks[winner] += pkPot;
+      setMsg("P" + winner + " wins " + formatChips(pkPot) + "  \u00B7  " + (winner === 1 ? e1.name : e2.name));
+      pkHandWinner = winner;
+      spawnBurstAt(W / 2, H * 0.4, winner === 1 ? COLORS.p1 : COLORS.p2);
+    }
+    pkPot = 0;
+    pkWaitingContinue = true;
+    pkState = "handend";
+  }
+  function finishHandToNext() {
+    pkButton = pkButton === 1 ? 2 : 1;
+    if (pkStacks[1] < BB || pkStacks[2] < BB) {
+      pkState = "matchout";
+      pkHandWinner = pkStacks[1] >= pkStacks[2] ? 1 : 2;
+      return;
+    }
+    startPokerHand();
+  }
+  function botPokerAction() {
+    const id = 2;
+    const eq = pkEquity[2];
+    const need = pkCurrentBet - pkBetThisStreet[id];
+    const potOdds = need / (pkPot + need + 0.01);
+    const stack = pkStacks[id];
+    if (need > 0 && eq < potOdds - 0.08 && eq < 0.35 && need > stack * 0.25 && Math.random() < 0.7) { doFold(id); return; }
+    if (eq > 0.62 && stack > need + BB && Math.random() < 0.55) { doBetRaise(id); return; }
+    if (eq > 0.72 && Math.random() < 0.75) { doBetRaise(id); return; }
+    if (need === 0) {
+      if (eq > 0.55 && Math.random() < 0.35) doBetRaise(id); else doCheckCall(id);
+    } else if (need <= stack && (eq + 0.05 >= potOdds || need <= BB * 2 || eq > 0.45)) {
+      doCheckCall(id);
+    } else if (need > stack * 0.4 && eq < 0.4) {
+      doFold(id);
+    } else doCheckCall(id);
+  }
+  function handlePokerInput() {
+    if (just(["Escape"])) { cashOutPoker(); return; }
+    if (pkState === "handend" && pkWaitingContinue) {
+      if (just(["Space", "Enter", "KeyC"])) finishHandToNext();
+      return;
+    }
+    if (pkState === "matchout") {
+      if (just(["Space", "Enter"])) cashOutPoker();
+      return;
+    }
+    if (pkState !== "decide") return;
+    const id = pkActor;
+    if (pkVsBot && id === 2) return;
+    let check = just(["KeyC"]);
+    let bet = just(["KeyB", "KeyR"]);
+    let fold = just(["KeyF"]);
+    if (fold) doFold(id);
+    else if (bet) doBetRaise(id);
+    else if (check) doCheckCall(id);
+  }
+  function dealNextStreetFromWait() {
+    pkBetThisStreet = { 1: 0, 2: 0 };
+    pkCurrentBet = 0;
+    pkMinRaise = BB;
+    if (pkStreet === 0) { pkBoard.push(drawFromDeck(), drawFromDeck(), drawFromDeck()); pkStreet = 1; }
+    else if (pkStreet === 1) { pkBoard.push(drawFromDeck()); pkStreet = 2; }
+    else if (pkStreet === 2) { pkBoard.push(drawFromDeck()); pkStreet = 3; }
+    recomputePokerHands();
+    resetStreetActionTrack();
+    pkActor = pkButton === 1 ? 2 : 1;
+    flashAlpha = Math.max(flashAlpha, 0.12);
+    spawnBurstAt(W / 2, H * 0.38, COLORS.accent);
+    setMsg(streetName());
+    beginDecide();
+  }
+  function updatePoker(dt) {
+    if (pkMsgT > 0) pkMsgT -= dt;
+    handlePokerInput();
+    if (pkState === "dealing") {
+      pkDealTimer -= dt;
+      if (pkDealTimer <= 0) beginDecide();
+      return;
+    }
+    if (pkState === "streetwait") {
+      pkStreetLeft -= dt;
+      if (pkStreetLeft <= 0) {
+        if (pkStreet >= 3) doShowdown();
+        else dealNextStreetFromWait();
+      }
+      return;
+    }
+    if (pkState === "decide") {
+      pkDecisionLeft -= dt;
+      if (pkVsBot && pkActor === 2 && !pkBotActed && pkDecisionLeft < pkDecisionTimer - 0.55) {
+        pkBotActed = true;
+        botPokerAction();
+      }
+      if (pkActor === 1) pkBotActed = false;
+      if (pkDecisionLeft <= 0 && pkState === "decide") {
+        const id = pkActor;
+        const need = pkCurrentBet - pkBetThisStreet[id];
+        if (need > pkStacks[id] && need > 0) doFold(id);
+        else doCheckCall(id);
+      }
+    }
+  }
+
+  function suitColor(card) { return card && card.red ? COLORS.redSuit : COLORS.blkSuit; }
+  function drawCardFace(x, y, card, scale, edge) {
+    const s = scale || 1;
+    const cw = 54 * s, ch = 76 * s;
+    const cx = x - cw / 2, cy = y;
+    roundRect(cx, cy, cw, ch, 10 * s);
+    ctx.fillStyle = COLORS.panel; ctx.fill();
+    ctx.strokeStyle = edge ? COLORS.accent : COLORS.border;
+    ctx.lineWidth = edge ? 2.5 : 1.5;
+    roundRect(cx, cy, cw, ch, 10 * s); ctx.stroke();
+    if (!card) return;
+    ctx.textAlign = "center";
+    ctx.fillStyle = suitColor(card);
+    ctx.font = "700 " + Math.floor(22 * s) + "px " + FONT;
+    ctx.fillText(card.label, x, cy + ch * 0.42);
+    ctx.font = "600 " + Math.floor(18 * s) + "px " + FONT;
+    ctx.fillText(card.glyph, x, cy + ch * 0.72);
+  }
+
+  function updatePokerTitle() {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (just(["ArrowUp", "KeyW"])) pkTitleFocus = (pkTitleFocus + 3) % 4;
+    if (just(["ArrowDown", "KeyS"])) pkTitleFocus = (pkTitleFocus + 1) % 4;
+    if (pkTitleFocus === 0) {
+      if (just(["ArrowLeft", "KeyA", "Digit1"])) pkVsBot = false;
+      if (just(["ArrowRight", "KeyD", "Digit2"])) pkVsBot = true;
+    } else if (pkTitleFocus === 1) {
+      if (just(["ArrowLeft", "KeyA", "Minus"])) pkStreetInterval = clamp(pkStreetInterval - 1, 2, 20);
+      if (just(["ArrowRight", "KeyD", "Equal"])) pkStreetInterval = clamp(pkStreetInterval + 1, 2, 20);
+    } else if (pkTitleFocus === 2) {
+      if (just(["ArrowLeft", "KeyA", "Minus"])) pkDecisionTimer = clamp(pkDecisionTimer - 1, 4, 30);
+      if (just(["ArrowRight", "KeyD", "Equal"])) pkDecisionTimer = clamp(pkDecisionTimer + 1, 4, 30);
+    } else if (pkTitleFocus === 3) {
+      const step = held(["ShiftLeft", "ShiftRight"]) ? 500 : 100;
+      if (just(["ArrowLeft", "KeyA", "Minus"])) pkStartStack = clamp(pkStartStack - step, 100, 50000);
+      if (just(["ArrowRight", "KeyD", "Equal"])) pkStartStack = clamp(pkStartStack + step, 100, 50000);
+    }
+    if (just(["Space", "Enter"])) startPokerSession();
+  }
+
+  function drawPokerTitle() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText("OFFSUIT HOUSE  \u00B7  POKER ROOM", W / 2, H * 0.1);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 48px " + FONT;
+    ctx.fillText("Chip War", W / 2, H * 0.1 + 52);
+    ctx.fillStyle = COLORS.muted; ctx.font = "400 15px " + FONT;
+    ctx.fillText("Heads-up Hold\u2019em  \u00B7  Dead simple, deliberately designed.", W / 2, H * 0.1 + 82);
+
+    const mw = Math.min(220, W * 0.3), mh = 100, gap = 16, my = H * 0.28;
+    const m1x = W / 2 - gap / 2 - mw, m2x = W / 2 + gap / 2;
+    function modeCard(x, selected, title, l1, l2) {
+      drawPanel(x, my, mw, mh, 20, selected ? COLORS.accent : COLORS.border);
+      if (selected) { ctx.fillStyle = COLORS.accent; roundRect(x + 12, my + 18, 4, mh - 36, 2); ctx.fill(); }
+      ctx.textAlign = "center";
+      ctx.fillStyle = selected ? COLORS.accent : COLORS.white; ctx.font = "600 16px " + FONT;
+      ctx.fillText(title, x + mw / 2, my + 38);
+      ctx.fillStyle = COLORS.white; ctx.font = "500 13px " + FONT; ctx.fillText(l1, x + mw / 2, my + 64);
+      ctx.fillStyle = COLORS.muted; ctx.fillText(l2, x + mw / 2, my + 84);
+    }
+    modeCard(m1x, !pkVsBot, "TWO PLAYER", "Same keyboard", "C / B / F on your turn");
+    modeCard(m2x, pkVsBot, "VS BOT", "You are Player 1", "Bank chips cash out");
+    if (pkTitleFocus === 0) {
+      roundRect(m1x - 8, my - 8, mw * 2 + gap + 16, mh + 16, 28);
+      ctx.strokeStyle = COLORS.accent; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.45; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+
+    function settingRow(y, focused, label, value) {
+      const pw = Math.min(480, W * 0.7), ph = 46, px = (W - pw) / 2;
+      drawPanel(px, y, pw, ph, 14, focused ? COLORS.accent : COLORS.border);
+      ctx.textAlign = "left";
+      ctx.fillStyle = focused ? COLORS.accent : COLORS.muted; ctx.font = "500 13px " + FONT;
+      ctx.fillText(label, px + 24, y + 29);
+      ctx.textAlign = "right";
+      ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+      ctx.fillText("\u25C0  " + value + "  \u25B6", px + pw - 20, y + 30);
+    }
+    const sy = my + mh + 28;
+    settingRow(sy, pkTitleFocus === 1, "Street interval (flop/turn/river)", pkStreetInterval + "s");
+    settingRow(sy + 56, pkTitleFocus === 2, "Decision timer", pkDecisionTimer + "s");
+    settingRow(sy + 112, pkTitleFocus === 3, "Start stacks", formatChips(pkStartStack));
+
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.textAlign = "center";
+    ctx.fillText("\u2191\u2193 focus  \u00B7  \u2190\u2192 adjust  \u00B7  Bank \u25C6 " + formatChips(bankChips), W / 2, sy + 172);
+    const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+    ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 18px " + FONT;
+    ctx.fillText("SPACE / ENTER \u2014 sit down", W / 2, Math.min(H - 48, sy + 210));
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("Esc \u2014 back to Offsuit House", W / 2, H - 24);
+  }
+
+  function drawPoker() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    const tableW = Math.min(720, W * 0.82), tableH = Math.min(340, H * 0.42);
+    const tx = (W - tableW) / 2, ty = H * 0.28;
+    roundRect(tx, ty, tableW, tableH, 120);
+    ctx.fillStyle = "#0C0C0C"; ctx.fill();
+    ctx.strokeStyle = COLORS.border; ctx.lineWidth = 2;
+    roundRect(tx, ty, tableW, tableH, 120); ctx.stroke();
+
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, 0, W, 64);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, 64); ctx.lineTo(W, 64); ctx.stroke();
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 11px " + FONT; ctx.fillText("CHIP WAR", 24, 20);
+    ctx.fillStyle = COLORS.p1; ctx.font = "700 16px " + FONT;
+    ctx.fillText("P1  \u25C6 " + formatChips(pkStacks[1]), 24, 44);
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 11px " + FONT; ctx.fillText(pkVsBot ? "VS BOT" : "2P", W - 24, 20);
+    ctx.fillStyle = COLORS.p2; ctx.font = "700 16px " + FONT;
+    ctx.fillText((pkVsBot ? "BOT" : "P2") + "  \u25C6 " + formatChips(pkStacks[2]), W - 24, 44);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.accent; ctx.font = "700 22px " + FONT;
+    ctx.fillText("POT  " + formatChips(pkPot), W / 2, 32);
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText(streetName() + (pkState === "decide" ? "  \u00B7  P" + pkActor + " to act" : ""), W / 2, 52);
+
+    const gap = 68, bx0 = W / 2 - gap * 2, by = ty + tableH * 0.28;
+    for (let i = 0; i < 5; i++) {
+      const c = pkBoard[i] || null;
+      if (c) drawCardFace(bx0 + i * gap, by, c, 1, true);
+      else {
+        const cw = 54, ch = 76;
+        roundRect(bx0 + i * gap - cw / 2, by, cw, ch, 10);
+        ctx.fillStyle = COLORS.panel; ctx.fill();
+        ctx.strokeStyle = COLORS.border; ctx.lineWidth = 1.5;
+        roundRect(bx0 + i * gap - cw / 2, by, cw, ch, 10); ctx.stroke();
+      }
+    }
+    const dealScale = pkState === "dealing" ? clamp(1 - pkDealTimer / 0.7, 0.2, 1) : 1;
+    drawCardFace(W * 0.22, ty + tableH - 30, pkHoles[1][0], dealScale, false);
+    drawCardFace(W * 0.22 + 58, ty + tableH - 30, pkHoles[1][1], dealScale, false);
+    drawCardFace(W * 0.78 - 58, ty + tableH - 30, pkHoles[2][0], dealScale, false);
+    drawCardFace(W * 0.78, ty + tableH - 30, pkHoles[2][1], dealScale, false);
+
+    ctx.textAlign = "left"; ctx.fillStyle = COLORS.soft; ctx.font = "600 13px " + FONT;
+    const n1 = pkHandInfo[1] ? pkHandInfo[1].name : "\u2014";
+    const n2 = pkHandInfo[2] ? pkHandInfo[2].name : "\u2014";
+    ctx.fillText(Math.round(pkEquity[1] * 100) + "%  \u00B7  " + n1, 24, ty + tableH + 50);
+    ctx.textAlign = "right"; ctx.fillStyle = COLORS.p2;
+    ctx.fillText(n2 + "  \u00B7  " + Math.round(pkEquity[2] * 100) + "%", W - 24, ty + tableH + 50);
+
+    ctx.textAlign = "center";
+    if (pkState === "decide") {
+      ctx.fillStyle = pkDecisionLeft <= 3 ? COLORS.accent : COLORS.white;
+      ctx.font = "700 28px " + FONT;
+      ctx.fillText(Math.ceil(Math.max(0, pkDecisionLeft)) + "s", W / 2, ty - 16);
+    } else if (pkState === "streetwait") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 16px " + FONT;
+      const label = pkStreet === 0 ? "FLOP" : pkStreet === 1 ? "TURN" : pkStreet === 2 ? "RIVER" : "SHOWDOWN";
+      ctx.fillText(label + " in " + Math.ceil(Math.max(0, pkStreetLeft)) + "s", W / 2, ty - 16);
+    } else if (pkState === "dealing") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "700 24px " + FONT; ctx.fillText("DEAL", W / 2, ty - 16);
+    }
+    if (pkMsgT > 0 || pkState === "handend" || pkState === "matchout") {
+      ctx.fillStyle = COLORS.white; ctx.font = "600 16px " + FONT; ctx.fillText(pkMsg, W / 2, ty + tableH * 0.18);
+    }
+    if (pkLastAction) {
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.fillText(pkLastAction, W / 2, ty + tableH * 0.55);
+    }
+
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, H - 72, W, 72);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, H - 72); ctx.lineTo(W, H - 72); ctx.stroke();
+    ctx.textAlign = "center";
+    if (pkState === "decide" && !(pkVsBot && pkActor === 2)) {
+      const need = pkCurrentBet - pkBetThisStreet[pkActor];
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 14px " + FONT;
+      ctx.fillText("P" + pkActor + "  \u00B7  C " + (need > 0 ? "CALL " + formatChips(need) : "CHECK") +
+        "   \u00B7   B / R BET-RAISE   \u00B7   F FOLD", W / 2, H - 40);
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+      ctx.fillText("Esc cash out to house", W / 2, H - 18);
+    } else if (pkState === "handend") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 15px " + FONT;
+      ctx.fillText("SPACE / ENTER \u2014 next hand  \u00B7  Esc cash out", W / 2, H - 36);
+    } else if (pkState === "matchout") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 15px " + FONT;
+      ctx.fillText("SPACE / ENTER \u2014 return to house (cash out)", W / 2, H - 36);
+    } else if (pkVsBot && pkState === "decide" && pkActor === 2) {
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT; ctx.fillText("Bot is deciding\u2026", W / 2, H - 36);
+    } else {
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 13px " + FONT;
+      ctx.fillText("Esc \u2014 cash out to Offsuit House", W / 2, H - 36);
+    }
+    drawParticles();
+    if (flashAlpha > 0) { ctx.fillStyle = "rgba(255,255,255," + flashAlpha + ")"; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // ========== DUEL (pure fighter) ==========
+  function makeFighter(id, side) {
+    return {
+      id, side, x: 0, y: 0, vx: 0, vy: 0,
+      facing: side === "left" ? 1 : -1, onGround: true,
+      attacking: false, attackT: 0, cooldown: 0,
+      stun: 0, invuln: 0, hitThisSwing: false, hp: MAX_HP,
+      color: id === 1 ? COLORS.p1 : COLORS.p2,
+      colorDark: id === 1 ? COLORS.p1Dark : COLORS.p2Dark,
+      anim: 0, allInUsed: false, allInArmed: false, allInVuln: 0,
+    };
+  }
+  let fp1 = makeFighter(1, "left");
+  let fp2 = makeFighter(2, "right");
+  const P1_LEFT = ["KeyA"], P1_RIGHT = ["KeyD"], P1_JUMP = ["KeyW"];
+  const P1_ATK = ["Space", "KeyF"], P1_ALLIN = ["KeyQ"];
+  const P2_LEFT = ["ArrowLeft"], P2_RIGHT = ["ArrowRight"], P2_JUMP = ["ArrowUp"];
+  const P2_ATK = ["Enter", "KeyK"], P2_ALLIN = ["KeyL"];
+  let aiThink = 0, aiWantJump = false, aiWantAtk = false, aiWantAllIn = false, aiDir = 0;
+
+  function placeFighters() {
+    const margin = Math.max(120, W * 0.18);
+    fp1.x = margin; fp2.x = W - margin - PLAYER_W;
+    fp1.y = groundY - PLAYER_H; fp2.y = groundY - PLAYER_H;
+  }
+  function resetFighters() {
+    fp1 = makeFighter(1, "left"); fp2 = makeFighter(2, "right"); placeFighters();
+  }
+  function startDuelMatch() {
+    if (duelWager > 0) {
+      if (bankChips < duelWager) duelWager = bankChips;
+      bankChips -= duelWager;
+    }
+    duelScores = { 1: 0, 2: 0 };
+    duelMatchWinner = null;
+    startDuelRound();
+  }
+  function startDuelRound() {
+    resetFighters();
+    duelRoundTime = duelRoundSec;
+    duelRoundWinner = null;
+    particles = []; flashAlpha = 0;
+    keys = Object.create(null);
+    scene = "duel_playing";
+  }
+  function endDuelRound(winner) {
+    if (scene !== "duel_playing") return;
+    duelRoundWinner = winner;
+    if (winner === 1 || winner === 2) duelScores[winner] += 1;
+    flashAlpha = 0.25;
+    if (duelScores[1] >= WIN_SCORE || duelScores[2] >= WIN_SCORE) {
+      duelMatchWinner = duelScores[1] >= WIN_SCORE ? 1 : 2;
+      if (duelWager > 0 && duelMatchWinner === 1) bankChips += duelWager * 2;
+      scene = "duel_matchend";
+    } else scene = "duel_roundend";
+  }
+  function tryAllIn(p) {
+    if (scene !== "duel_playing") return;
+    if (p.allInUsed || p.allInArmed || p.stun > 0) return;
+    p.allInUsed = true; p.allInArmed = true; p.allInVuln = ALLIN_VULN;
+    flashAlpha = Math.max(flashAlpha, 0.1);
+  }
+  function attackBox(p) {
+    const x = p.facing === 1 ? p.x + PLAYER_W - 8 : p.x - ATTACK_W + 8;
+    return { x, y: p.y + PLAYER_H * 0.28, w: ATTACK_W, h: ATTACK_H };
+  }
+  function bodyBox(p) { return { x: p.x + 8, y: p.y + 6, w: PLAYER_W - 16, h: PLAYER_H - 10 }; }
+  function overlaps(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+  function tryAttack(p) {
+    if (p.cooldown > 0 || p.stun > 0 || p.attacking) return;
+    p.attacking = true; p.attackT = ATTACK_DURATION; p.cooldown = ATTACK_COOLDOWN; p.hitThisSwing = false;
+  }
+  function applyHit(attacker, victim) {
+    if (victim.invuln > 0 || attacker.hitThisSwing) return;
+    attacker.hitThisSwing = true; victim.stun = HIT_STUN;
+    let dmg = BASE_DMG;
+    const wasAllIn = attacker.allInArmed;
+    if (attacker.allInArmed) { dmg = Math.round(dmg * 2); attacker.allInArmed = false; attacker.allInVuln = 0; }
+    if (victim.allInArmed || victim.allInVuln > 0) { dmg += 10; victim.allInArmed = false; victim.allInVuln = 0; }
+    if (dmg > 70) dmg = 70;
+    victim.invuln = INVULN; victim.attacking = false; victim.attackT = 0;
+    victim.vx = attacker.facing * KNOCKBACK_X; victim.vy = KNOCKBACK_Y; victim.onGround = false;
+    victim.hp -= dmg;
+    const ab = attackBox(attacker);
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, s = 80 + Math.random() * 220;
+      particles.push({
+        x: ab.x + ab.w / 2, y: ab.y + ab.h / 2,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.2 + Math.random() * 0.3, max: 0.5, r: 2 + Math.random() * 3,
+        color: wasAllIn ? COLORS.accent : attacker.color,
+      });
+    }
+    flashAlpha = Math.max(flashAlpha, wasAllIn ? 0.2 : 0.12);
+    if (victim.hp <= 0) { victim.hp = 0; endDuelRound(attacker.id); }
+  }
+  function updateFighter(p, dt, left, right, jump, atk) {
+    p.anim += dt;
+    if (p.cooldown > 0) p.cooldown -= dt;
+    if (p.stun > 0) p.stun -= dt;
+    if (p.invuln > 0) p.invuln -= dt;
+    if (p.allInVuln > 0) p.allInVuln -= dt;
+    if (p.attacking) { p.attackT -= dt; if (p.attackT <= 0) p.attacking = false; }
+    const canControl = p.stun <= 0;
+    let ax = 0;
+    if (canControl) {
+      if (left) ax -= 1; if (right) ax += 1;
+      if (ax !== 0) p.facing = ax > 0 ? 1 : -1;
+      if (jump && p.onGround) { p.vy = JUMP_VEL; p.onGround = false; }
+      if (atk) tryAttack(p);
+      p.vx = ax * MOVE_SPEED;
+    } else p.vx *= Math.pow(0.08, dt);
+    p.vy += GRAVITY * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.x < 24) { p.x = 24; p.vx = Math.max(0, p.vx); }
+    if (p.x + PLAYER_W > W - 24) { p.x = W - 24 - PLAYER_W; p.vx = Math.min(0, p.vx); }
+    if (p.y + PLAYER_H >= groundY) { p.y = groundY - PLAYER_H; p.vy = 0; p.onGround = true; }
+    else p.onGround = false;
+    if (p.y < 40) { p.y = 40; if (p.vy < 0) p.vy = 0; }
+  }
+  function updateDuelAI(dt) {
+    aiThink -= dt;
+    const me = fp2, foe = fp1;
+    const dx = (foe.x + PLAYER_W / 2) - (me.x + PLAYER_W / 2);
+    const dist = Math.abs(dx), behind = me.hp < foe.hp;
+    const range = PLAYER_W + ATTACK_W - 10;
+    if (aiThink <= 0) {
+      aiThink = 0.12 + Math.random() * 0.18;
+      aiWantJump = false; aiWantAtk = false; aiWantAllIn = false;
+      const preferGap = range * 0.7;
+      if (dist > preferGap + 20) aiDir = dx > 0 ? 1 : -1;
+      else if (dist < preferGap - 30) aiDir = dx > 0 ? -1 : 1;
+      else { aiDir = dx > 0 ? 1 : -1; if (Math.random() < 0.15) aiDir = 0; }
+      if (me.onGround && foe.y + PLAYER_H < me.y - 20 && Math.random() < 0.55) aiWantJump = true;
+      else if (me.onGround && Math.random() < 0.04) aiWantJump = true;
+      if (dist < range + 12 && me.cooldown <= 0 && me.stun <= 0 && Math.random() < 0.55) aiWantAtk = true;
+      if (!me.allInUsed && !me.allInArmed) {
+        let c = 0;
+        if (dist < range + 40) c = 0.08;
+        if (behind && me.hp <= 30) c = 0.35;
+        if (me.hp <= 30 && foe.hp <= 30) c = 0.4;
+        if (Math.random() < c) aiWantAllIn = true;
+      }
+    }
+    if (aiWantAllIn) { tryAllIn(me); aiWantAllIn = false; }
+    updateFighter(me, dt, aiDir < 0, aiDir > 0, aiWantJump, aiWantAtk);
+    aiWantJump = false; aiWantAtk = false;
+  }
+  function updateDuel(dt) {
+    if (just(["Escape"])) {
+      if ((scene === "duel_playing" || scene === "duel_roundend") && duelWager > 0 && !duelMatchWinner) {
+        bankChips += duelWager;
+      }
+      leaveToHouse();
+      return;
+    }
+    if (scene === "duel_roundend") {
+      if (just(["Space", "Enter", "KeyR"])) startDuelRound();
+      return;
+    }
+    if (scene === "duel_matchend") {
+      if (just(["Space", "Enter", "KeyR"])) {
+        if (duelWager > 0 && bankChips < duelWager) duelWager = bankChips;
+        startDuelMatch();
+      }
+      return;
+    }
+    if (scene !== "duel_playing") return;
+    duelRoundTime -= dt;
+    if (duelRoundTime <= 0) {
+      duelRoundTime = 0;
+      if (fp1.hp > fp2.hp) endDuelRound(1);
+      else if (fp2.hp > fp1.hp) endDuelRound(2);
+      else endDuelRound("draw");
+      return;
+    }
+    if (held(P1_ALLIN)) tryAllIn(fp1);
+    updateFighter(fp1, dt, held(P1_LEFT), held(P1_RIGHT), held(P1_JUMP), held(P1_ATK));
+    if (duelVsBot) updateDuelAI(dt);
+    else {
+      if (held(P2_ALLIN)) tryAllIn(fp2);
+      updateFighter(fp2, dt, held(P2_LEFT), held(P2_RIGHT), held(P2_JUMP), held(P2_ATK));
+    }
+    if (fp1.attacking && !fp1.hitThisSwing && overlaps(attackBox(fp1), bodyBox(fp2))) applyHit(fp1, fp2);
+    if (fp2.attacking && !fp2.hitThisSwing && overlaps(attackBox(fp2), bodyBox(fp1))) applyHit(fp2, fp1);
+  }
+
+  function drawHealthBar(x, y, w, h, hpFrac, color, align) {
+    roundRect(x, y, w, h, h / 2);
+    ctx.fillStyle = COLORS.hpEmpty; ctx.fill();
+    ctx.strokeStyle = COLORS.border; ctx.lineWidth = 2;
+    roundRect(x, y, w, h, h / 2); ctx.stroke();
+    const fillW = Math.max(0, Math.min(1, hpFrac)) * (w - 6);
+    if (fillW > 0) {
+      const fx = align === "right" ? x + w - 3 - fillW : x + 3;
+      roundRect(fx, y + 3, fillW, h - 6, (h - 6) / 2);
+      ctx.fillStyle = hpFrac <= 0.28 ? COLORS.hpLow : color; ctx.fill();
+    }
+  }
+  function drawFighter(p) {
+    const blink = p.invuln > 0 && Math.floor(p.invuln * 16) % 2 === 0;
+    if (blink) ctx.globalAlpha = 0.4;
+    const bob = p.onGround && Math.abs(p.vx) > 20 ? Math.sin(p.anim * 14) * 2 : 0;
+    const bx = p.x, by = p.y + bob;
+    if (p.allInArmed) {
+      ctx.globalAlpha = blink ? 0.25 : (0.35 + 0.25 * Math.sin(startPulse * 8));
+      roundRect(bx - 6, by - 6, PLAYER_W + 12, PLAYER_H + 12, 20);
+      ctx.strokeStyle = COLORS.accent; ctx.lineWidth = 3; ctx.stroke();
+      ctx.globalAlpha = blink ? 0.4 : 1;
+    }
+    roundRect(bx, by, PLAYER_W, PLAYER_H, 16); ctx.fillStyle = p.color; ctx.fill();
+    roundRect(bx + 8, by + 28, PLAYER_W - 16, PLAYER_H - 40, 10); ctx.fillStyle = p.colorDark; ctx.fill();
+    ctx.fillStyle = COLORS.bg;
+    const eyeX = p.facing === 1 ? bx + PLAYER_W * 0.55 : bx + PLAYER_W * 0.18;
+    roundRect(eyeX, by + 18, PLAYER_W * 0.28, 12, 4); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(bx + 12, by + PLAYER_H - 18, 12, 14);
+    ctx.fillRect(bx + PLAYER_W - 24, by + PLAYER_H - 18, 12, 14);
+    if (p.attacking) {
+      const ab = attackBox(p);
+      ctx.globalAlpha = blink ? 0.35 : 0.85;
+      roundRect(ab.x, ab.y, ab.w, ab.h, 14);
+      ctx.fillStyle = p.allInArmed ? COLORS.accent : p.color; ctx.fill();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    drawHealthBar(p.x + (PLAYER_W - 64) / 2, p.y - 20, 64, 10, p.hp / MAX_HP, p.color, "left");
+    if (p.allInArmed) {
+      ctx.textAlign = "center"; ctx.font = "700 12px " + FONT; ctx.fillStyle = COLORS.accent;
+      ctx.fillText("BURST", p.x + PLAYER_W / 2, p.y - 30);
+    }
+  }
+  function drawDuelBg() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    const wash = ctx.createLinearGradient(0, groundY - 120, 0, H);
+    wash.addColorStop(0, "rgba(23,23,23,0)");
+    wash.addColorStop(0.55, "rgba(23,23,23,0.55)");
+    wash.addColorStop(1, "rgba(23,23,23,0.9)");
+    ctx.fillStyle = wash; ctx.fillRect(0, groundY - 120, W, H - (groundY - 120));
+    ctx.fillStyle = COLORS.ground; ctx.fillRect(0, groundY, W, H - groundY);
+    ctx.fillStyle = COLORS.groundLine; ctx.fillRect(0, groundY, W, 2);
+    ctx.fillStyle = COLORS.border; ctx.fillRect(0, 0, 2, groundY); ctx.fillRect(W - 2, 0, 2, groundY);
+  }
+  function drawOverlayPanel(lines, sub) {
+    const pw = Math.min(640, W * 0.86), ph = 220;
+    const px = (W - pw) / 2, py = (H - ph) / 2 - 20;
+    ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fillRect(0, 0, W, H);
+    drawPanel(px, py, pw, ph, 28);
+    ctx.textAlign = "center";
+    let ty = py + 64;
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i];
+      ctx.fillStyle = L.color || COLORS.white;
+      ctx.font = L.font || ("700 40px " + FONT);
+      ctx.fillText(L.text, W / 2, ty);
+      ty += L.gap || 48;
+    }
+    if (sub) {
+      const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+      ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 16px " + FONT;
+      ctx.fillText(sub, W / 2, py + ph - 36); ctx.globalAlpha = 1;
+    }
+  }
+  function updateDuelTitle() {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (just(["ArrowUp", "KeyW"])) duelTitleFocus = (duelTitleFocus + 2) % 3;
+    if (just(["ArrowDown", "KeyS"])) duelTitleFocus = (duelTitleFocus + 1) % 3;
+    if (duelTitleFocus === 0) {
+      if (just(["ArrowLeft", "KeyA", "Digit1"])) duelVsBot = false;
+      if (just(["ArrowRight", "KeyD", "Digit2"])) duelVsBot = true;
+    } else if (duelTitleFocus === 1) {
+      const step = held(["ShiftLeft", "ShiftRight"]) ? 100 : 50;
+      if (just(["ArrowLeft", "KeyA", "Minus"])) duelWager = clamp(duelWager - step, 0, bankChips);
+      if (just(["ArrowRight", "KeyD", "Equal"])) duelWager = clamp(duelWager + step, 0, bankChips);
+    } else if (duelTitleFocus === 2) {
+      const step = held(["ShiftLeft", "ShiftRight"]) ? 10 : 5;
+      if (just(["ArrowLeft", "KeyA", "Minus"])) duelRoundSec = clamp(duelRoundSec - step, 15, 180);
+      if (just(["ArrowRight", "KeyD", "Equal"])) duelRoundSec = clamp(duelRoundSec + step, 15, 180);
+    }
+    if (just(["Space", "Enter"])) startDuelMatch();
+  }
+  function drawDuelTitle() {
+    drawDuelBg(); placeFighters();
+    fp1.anim = startPulse; fp2.anim = startPulse;
+    drawFighter(fp1); drawFighter(fp2);
+    ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText("OFFSUIT HOUSE  \u00B7  DUEL ROOM", W / 2, H * 0.08);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 48px " + FONT;
+    ctx.fillText("Arena Duel", W / 2, H * 0.08 + 52);
+    ctx.fillStyle = COLORS.muted; ctx.font = "400 15px " + FONT;
+    ctx.fillText("Pure fighting  \u00B7  No cards  \u00B7  Dead simple, deliberately designed.", W / 2, H * 0.08 + 82);
+
+    const mw = Math.min(220, W * 0.3), mh = 96, gap = 16, my = H * 0.26;
+    const m1x = W / 2 - gap / 2 - mw, m2x = W / 2 + gap / 2;
+    function modeCard(x, selected, title, l1, l2) {
+      drawPanel(x, my, mw, mh, 20, selected ? COLORS.accent : COLORS.border);
+      ctx.textAlign = "center";
+      ctx.fillStyle = selected ? COLORS.accent : COLORS.white; ctx.font = "600 16px " + FONT;
+      ctx.fillText(title, x + mw / 2, my + 36);
+      ctx.fillStyle = COLORS.white; ctx.font = "500 13px " + FONT; ctx.fillText(l1, x + mw / 2, my + 60);
+      ctx.fillStyle = COLORS.muted; ctx.fillText(l2, x + mw / 2, my + 80);
+    }
+    modeCard(m1x, !duelVsBot, "TWO PLAYER", "WASD vs Arrows", "Same keyboard");
+    modeCard(m2x, duelVsBot, "VS BOT", "You are Player 1", "WASD  \u00B7  AI is P2");
+    if (duelTitleFocus === 0) {
+      roundRect(m1x - 8, my - 8, mw * 2 + gap + 16, mh + 16, 28);
+      ctx.strokeStyle = COLORS.accent; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.45; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    function settingRow(y, focused, label, value) {
+      const pw = Math.min(480, W * 0.7), ph = 46, px = (W - pw) / 2;
+      drawPanel(px, y, pw, ph, 14, focused ? COLORS.accent : COLORS.border);
+      ctx.textAlign = "left";
+      ctx.fillStyle = focused ? COLORS.accent : COLORS.muted; ctx.font = "500 13px " + FONT;
+      ctx.fillText(label, px + 24, y + 29);
+      ctx.textAlign = "right";
+      ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+      ctx.fillText("\u25C0  " + value + "  \u25B6", px + pw - 20, y + 30);
+    }
+    const sy = my + mh + 24;
+    settingRow(sy, duelTitleFocus === 1, "Wager (from bank)", duelWager === 0 ? "None" : "\u25C6 " + formatChips(duelWager));
+    settingRow(sy + 56, duelTitleFocus === 2, "Round time", duelRoundSec + "s");
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.textAlign = "center";
+    ctx.fillText("\u2191\u2193 focus  \u00B7  \u2190\u2192 adjust  \u00B7  Bank \u25C6 " + formatChips(bankChips) + "  \u00B7  First to " + WIN_SCORE, W / 2, sy + 118);
+
+    const cardW = Math.min(260, W * 0.34), cardH = 88, cy = sy + 140;
+    const c1x = W / 2 - gap / 2 - cardW, c2x = W / 2 + gap / 2;
+    function ctrl(x, color, title, l1, l2) {
+      drawPanel(x, cy, cardW, cardH, 16);
+      ctx.fillStyle = color; roundRect(x + 12, cy + 16, 4, cardH - 32, 2); ctx.fill();
+      ctx.textAlign = "center";
+      ctx.fillStyle = color; ctx.font = "600 14px " + FONT; ctx.fillText(title, x + cardW / 2, cy + 28);
+      ctx.fillStyle = COLORS.white; ctx.font = "500 12px " + FONT; ctx.fillText(l1, x + cardW / 2, cy + 52);
+      ctx.fillStyle = COLORS.muted; ctx.fillText(l2, x + cardW / 2, cy + 72);
+    }
+    ctrl(c1x, COLORS.p1, "PLAYER 1", "WASD  \u00B7  SPACE/F attack", "Q \u2014 burst once");
+    ctrl(c2x, COLORS.p2, duelVsBot ? "BOT" : "PLAYER 2",
+      duelVsBot ? "Chases & attacks" : "Arrows  \u00B7  ENTER/K attack",
+      duelVsBot ? "Burst when low" : "L \u2014 burst once");
+    const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+    ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 18px " + FONT;
+    ctx.fillText("SPACE / ENTER \u2014 fight", W / 2, Math.min(H - 40, cy + cardH + 32));
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("Esc \u2014 back to Offsuit House", W / 2, H - 20);
+  }
+
+  function drawDuelPlay() {
+    drawDuelBg();
+    drawFighter(fp1);
+    drawFighter(fp2);
+    drawParticles();
+
+    const barH = 72;
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, 0, W, barH);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, barH); ctx.lineTo(W, barH); ctx.stroke();
+
+    const hpBarW = Math.min(260, W * 0.28);
+    drawHealthBar(24, 16, hpBarW, 20, fp1.hp / MAX_HP, COLORS.p1, "left");
+    drawHealthBar(W - 24 - hpBarW, 16, hpBarW, 20, fp2.hp / MAX_HP, COLORS.p2, "right");
+
+    ctx.textAlign = "left"; ctx.fillStyle = COLORS.p1; ctx.font = "700 13px " + FONT;
+    ctx.fillText("P1  \u00B7  Rounds " + duelScores[1], 24, 54);
+    ctx.textAlign = "right"; ctx.fillStyle = COLORS.p2;
+    ctx.fillText((duelVsBot ? "BOT" : "P2") + "  \u00B7  Rounds " + duelScores[2], W - 24, 54);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 11px " + FONT; ctx.fillText("ARENA DUEL", W / 2, 16);
+    const t = Math.ceil(Math.max(0, duelRoundTime));
+    ctx.fillStyle = t <= 10 ? COLORS.accent : COLORS.white; ctx.font = "700 28px " + FONT;
+    ctx.fillText(String(t), W / 2, 46);
+    if (duelWager > 0) {
+      ctx.fillStyle = COLORS.accent; ctx.font = "500 11px " + FONT;
+      ctx.fillText("Wager \u25C6 " + formatChips(duelWager), W / 2, 64);
+    }
+
+    if (scene === "duel_playing") {
+      ctx.font = "500 12px " + FONT;
+      ctx.textAlign = "left"; ctx.fillStyle = COLORS.p1;
+      ctx.fillText("P1  WASD  \u00B7  SPACE/F  \u00B7  Q burst", 24, H - 24);
+      ctx.textAlign = "right"; ctx.fillStyle = COLORS.p2;
+      ctx.fillText(duelVsBot ? "BOT  \u00B7  Esc house" : "P2  \u2190\u2192\u2191  \u00B7  ENTER/K  \u00B7  L burst", W - 24, H - 24);
+    }
+
+    if (flashAlpha > 0) {
+      ctx.fillStyle = "rgba(255,255,255," + flashAlpha + ")"; ctx.fillRect(0, 0, W, H);
+    }
+
+    if (scene === "duel_roundend") {
+      let headline, color;
+      if (duelRoundWinner === "draw") { headline = "TIME UP \u2014 DRAW"; color = COLORS.accent; }
+      else { headline = "PLAYER " + duelRoundWinner + " SCORES!"; color = duelRoundWinner === 1 ? COLORS.p1 : COLORS.p2; }
+      drawOverlayPanel([
+        { text: headline, color, font: "700 36px " + FONT },
+        { text: duelScores[1] + "  \u2014  " + duelScores[2], color: COLORS.white, font: "600 28px " + FONT },
+      ], "SPACE / ENTER \u2014 next round  \u00B7  Esc house");
+    }
+
+    if (scene === "duel_matchend") {
+      const color = duelMatchWinner === 1 ? COLORS.p1 : COLORS.p2;
+      const label = (duelVsBot && duelMatchWinner === 2) ? "BOT WINS!" : "PLAYER " + duelMatchWinner + " WINS!";
+      const wagerLine = duelWager > 0
+        ? (duelMatchWinner === 1 ? "Won \u25C6 " + formatChips(duelWager * 2) : "Lost \u25C6 " + formatChips(duelWager))
+        : "Final  " + duelScores[1] + "  \u2014  " + duelScores[2];
+      drawOverlayPanel([
+        { text: label, color, font: "700 40px " + FONT },
+        { text: wagerLine, color: COLORS.white, font: "500 22px " + FONT },
+      ], "SPACE / ENTER / R rematch  \u00B7  Esc house");
+    }
+  }
+
+
+  // ========== BLACKJACK ==========
+  let bjTitleFocus = 0;
+  let bjWager = 50;
+  let bjState = "idle"; // dealing | play | dealer | settle | done
+  let bjDeck = [];
+  let bjPlayer = [];
+  let bjDealer = [];
+  let bjMsg = "";
+  let bjMsgT = 0;
+  let bjHideHole = true;
+  let bjDealTimer = 0;
+  let bjResult = null; // win | lose | push | bust | bj
+
+  function bjFreshDeck() {
+    const d = [];
+    for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) {
+      d.push({ rank: r, suit: s, label: RANK_LABELS[r - 2], glyph: SUIT_GLYPHS[s], red: s === 1 || s === 2 });
+    }
+    return shuffleInPlace(d);
+  }
+  function bjCardVal(c) { return c.rank === 14 ? 11 : Math.min(10, c.rank); }
+  function bjHandTotal(hand) {
+    let t = 0, aces = 0;
+    for (let i = 0; i < hand.length; i++) {
+      t += bjCardVal(hand[i]);
+      if (hand[i].rank === 14) aces++;
+    }
+    while (t > 21 && aces > 0) { t -= 10; aces--; }
+    return t;
+  }
+  function bjIsBJ(hand) { return hand.length === 2 && bjHandTotal(hand) === 21; }
+
+  function startBlackjack() {
+    bjWager = clamp(bjWager, 0, bankChips);
+    if (bjWager > 0) bankChips -= bjWager;
+    bjDeck = bjFreshDeck();
+    bjPlayer = []; bjDealer = [];
+    bjHideHole = true; bjResult = null; bjMsg = ""; bjMsgT = 0;
+    bjDealTimer = 0.85;
+    bjState = "dealing";
+    scene = "bj_play";
+    particles = [];
+  }
+  function bjDealOne() {
+    if (bjPlayer.length === 0) bjPlayer.push(bjDeck.pop());
+    else if (bjDealer.length === 0) bjDealer.push(bjDeck.pop());
+    else if (bjPlayer.length === 1) bjPlayer.push(bjDeck.pop());
+    else if (bjDealer.length === 1) bjDealer.push(bjDeck.pop());
+  }
+  function bjFinishDeal() {
+    while (bjPlayer.length < 2 || bjDealer.length < 2) bjDealOne();
+    if (bjIsBJ(bjPlayer) || bjIsBJ(bjDealer)) {
+      bjHideHole = false;
+      settleBlackjack();
+    } else {
+      bjState = "play";
+      bjMsg = "Hit or Stand";
+      bjMsgT = 1.5;
+    }
+  }
+  function settleBlackjack() {
+    const pt = bjHandTotal(bjPlayer), dt = bjHandTotal(bjDealer);
+    const pbj = bjIsBJ(bjPlayer), dbj = bjIsBJ(bjDealer);
+    if (pt > 21) { bjResult = "bust"; bjMsg = "BUST"; }
+    else if (dt > 21) { bjResult = "win"; bjMsg = "DEALER BUSTS"; }
+    else if (pbj && !dbj) { bjResult = "bj"; bjMsg = "BLACKJACK"; }
+    else if (dbj && !pbj) { bjResult = "lose"; bjMsg = "DEALER BLACKJACK"; }
+    else if (pt > dt) { bjResult = "win"; bjMsg = "YOU WIN"; }
+    else if (pt < dt) { bjResult = "lose"; bjMsg = "DEALER WINS"; }
+    else { bjResult = "push"; bjMsg = "PUSH"; }
+    bjMsgT = 99;
+    if (bjResult === "bj") bankChips += Math.floor(bjWager * 2.5);
+    else if (bjResult === "win") bankChips += bjWager * 2;
+    else if (bjResult === "push") bankChips += bjWager;
+    if (bjResult === "win" || bjResult === "bj") spawnBurstAt(W / 2, H * 0.4, COLORS.accent);
+    bjState = "done";
+  }
+  function bjHit() {
+    if (bjState !== "play") return;
+    bjPlayer.push(bjDeck.pop());
+    if (bjHandTotal(bjPlayer) > 21) {
+      bjHideHole = false;
+      settleBlackjack();
+    }
+  }
+  function bjStand() {
+    if (bjState !== "play") return;
+    bjHideHole = false;
+    bjState = "dealer";
+    bjDealTimer = 0.45;
+  }
+  function updateBjTitle() {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (just(["ArrowUp", "KeyW"])) bjTitleFocus = (bjTitleFocus + 1) % 2;
+    if (just(["ArrowDown", "KeyS"])) bjTitleFocus = (bjTitleFocus + 1) % 2;
+    if (bjTitleFocus === 0) {
+      const step = held(["ShiftLeft", "ShiftRight"]) ? 100 : 25;
+      if (just(["ArrowLeft", "KeyA", "Minus"])) bjWager = clamp(bjWager - step, 0, bankChips);
+      if (just(["ArrowRight", "KeyD", "Equal"])) bjWager = clamp(bjWager + step, 0, bankChips);
+    }
+    if (just(["Space", "Enter"])) startBlackjack();
+  }
+  function updateBlackjack(dt) {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (bjMsgT > 0 && bjMsgT < 90) bjMsgT -= dt;
+    if (bjState === "dealing") {
+      bjDealTimer -= dt;
+      if (bjDealTimer <= 0.6 && bjPlayer.length + bjDealer.length < 1) bjDealOne();
+      if (bjDealTimer <= 0.45 && bjPlayer.length + bjDealer.length < 2) bjDealOne();
+      if (bjDealTimer <= 0.3 && bjPlayer.length + bjDealer.length < 3) bjDealOne();
+      if (bjDealTimer <= 0.15 && bjPlayer.length + bjDealer.length < 4) bjDealOne();
+      if (bjDealTimer <= 0) bjFinishDeal();
+      return;
+    }
+    if (bjState === "play") {
+      if (just(["KeyH", "KeyC"])) bjHit();
+      else if (just(["KeyS", "Enter", "Space"])) bjStand();
+      return;
+    }
+    if (bjState === "dealer") {
+      bjDealTimer -= dt;
+      if (bjDealTimer > 0) return;
+      if (bjHandTotal(bjDealer) < 17) {
+        bjDealer.push(bjDeck.pop());
+        bjDealTimer = 0.4;
+      } else settleBlackjack();
+      return;
+    }
+    if (bjState === "done") {
+      if (just(["Space", "Enter", "KeyR"])) {
+        if (bjWager > bankChips) bjWager = bankChips;
+        startBlackjack();
+      }
+    }
+  }
+  function drawBjTitle() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText("OFFSUIT HOUSE  \u00B7  BLACKJACK", W / 2, H * 0.14);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 48px " + FONT;
+    ctx.fillText("Twenty-One", W / 2, H * 0.14 + 52);
+    ctx.fillStyle = COLORS.muted; ctx.font = "400 15px " + FONT;
+    ctx.fillText("Vs dealer bot  \u00B7  Hit / Stand  \u00B7  Blackjack pays 3:2", W / 2, H * 0.14 + 82);
+    const sy = H * 0.38;
+    const pw = Math.min(480, W * 0.7), ph = 52, px = (W - pw) / 2;
+    drawPanel(px, sy, pw, ph, 14, bjTitleFocus === 0 ? COLORS.accent : COLORS.border);
+    ctx.textAlign = "left";
+    ctx.fillStyle = bjTitleFocus === 0 ? COLORS.accent : COLORS.muted; ctx.font = "500 13px " + FONT;
+    ctx.fillText("Wager (from bank)", px + 24, sy + 32);
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+    ctx.fillText("\u25C0  " + (bjWager === 0 ? "None" : "\u25C6 " + formatChips(bjWager)) + "  \u25B6", px + pw - 20, sy + 33);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 13px " + FONT;
+    ctx.fillText("Bank \u25C6 " + formatChips(bankChips) + "  \u00B7  H hit  \u00B7  S stand", W / 2, sy + 90);
+    const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+    ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 18px " + FONT;
+    ctx.fillText("SPACE / ENTER \u2014 deal", W / 2, sy + 140);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("Esc \u2014 back to Offsuit House", W / 2, H - 24);
+  }
+  function drawBlackjack() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(W, 56); ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.fillText("BLACKJACK", 24, 22);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT; ctx.fillText("Twenty-One", 24, 44);
+    drawBankHud();
+    if (bjWager > 0) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = COLORS.accent; ctx.font = "500 12px " + FONT;
+      ctx.fillText("Wager \u25C6 " + formatChips(bjWager), W / 2, 34);
+    }
+
+    const tableW = Math.min(640, W * 0.78), tableH = Math.min(300, H * 0.4);
+    const tx = (W - tableW) / 2, ty = H * 0.22;
+    roundRect(tx, ty, tableW, tableH, 100);
+    ctx.fillStyle = "#0C0C0C"; ctx.fill();
+    ctx.strokeStyle = COLORS.border; ctx.lineWidth = 2;
+    roundRect(tx, ty, tableW, tableH, 100); ctx.stroke();
+
+    function row(cards, y, hideSecond) {
+      const n = cards.length || 1;
+      const gap = 62;
+      const start = W / 2 - ((n - 1) * gap) / 2;
+      for (let i = 0; i < cards.length; i++) {
+        if (hideSecond && i === 1) drawCardFace(start + i * gap, y, null, 1, false);
+        else drawCardFace(start + i * gap, y, cards[i], 1, true);
+      }
+      if (!cards.length) {
+        roundRect(W / 2 - 27, y, 54, 76, 10);
+        ctx.fillStyle = COLORS.panel; ctx.fill();
+        ctx.strokeStyle = COLORS.border; ctx.stroke();
+      }
+    }
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("DEALER" + (bjHideHole ? "" : "  \u00B7  " + bjHandTotal(bjDealer)), W / 2, ty + 28);
+    row(bjDealer, ty + 40, bjHideHole && bjDealer.length >= 2);
+    ctx.fillStyle = COLORS.soft; ctx.font = "500 12px " + FONT;
+    ctx.fillText("YOU  \u00B7  " + (bjPlayer.length ? bjHandTotal(bjPlayer) : "\u2014"), W / 2, ty + tableH - 100);
+    row(bjPlayer, ty + tableH - 88, false);
+
+    if (bjMsg && (bjMsgT > 0 || bjState === "done")) {
+      ctx.fillStyle = bjResult === "lose" || bjResult === "bust" ? COLORS.p2 : COLORS.accent;
+      ctx.font = "700 28px " + FONT;
+      ctx.fillText(bjMsg, W / 2, ty + tableH * 0.48);
+    }
+
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, H - 72, W, 72);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, H - 72); ctx.lineTo(W, H - 72); ctx.stroke();
+    ctx.textAlign = "center";
+    if (bjState === "play") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 15px " + FONT;
+      ctx.fillText("H / C HIT   \u00B7   S / SPACE / ENTER STAND", W / 2, H - 40);
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+      ctx.fillText("Esc \u2014 house", W / 2, H - 18);
+    } else if (bjState === "done") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "600 15px " + FONT;
+      ctx.fillText("SPACE / ENTER / R \u2014 deal again  \u00B7  Esc house", W / 2, H - 36);
+    } else if (bjState === "dealing") {
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT; ctx.fillText("Dealing\u2026", W / 2, H - 36);
+    } else if (bjState === "dealer") {
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT; ctx.fillText("Dealer draws\u2026", W / 2, H - 36);
+    }
+    drawParticles();
+  }
+
+  // ========== MEMORY MATCH ==========
+  let memTitleFocus = 0;
+  let memWager = 0;
+  let memState = "idle"; // play | won | lost
+  let memCards = [];
+  let memFlipped = [];
+  let memMatched = 0;
+  let memMoves = 0;
+  let memLock = 0;
+  let memCols = 4;
+  let memRows = 3;
+  let memMsg = "";
+
+  function startMemory() {
+    memWager = clamp(memWager, 0, bankChips);
+    if (memWager > 0) bankChips -= memWager;
+    const pairs = (memCols * memRows) / 2;
+    const ranks = [];
+    for (let i = 0; i < pairs; i++) ranks.push(2 + (i % 13));
+    const deck = [];
+    for (let i = 0; i < pairs; i++) {
+      const r = ranks[i], s = i % 4;
+      const c = { rank: r, suit: s, label: RANK_LABELS[r - 2], glyph: SUIT_GLYPHS[s], red: s === 1 || s === 2 };
+      deck.push({ card: c, id: i * 2, face: false, matched: false, pair: i });
+      deck.push({ card: Object.assign({}, c), id: i * 2 + 1, face: false, matched: false, pair: i });
+    }
+    shuffleInPlace(deck);
+    memCards = deck;
+    memFlipped = [];
+    memMatched = 0;
+    memMoves = 0;
+    memLock = 0;
+    memMsg = "";
+    memState = "play";
+    scene = "mem_play";
+    particles = [];
+  }
+  function memTryFlip(idx) {
+    if (memState !== "play" || memLock > 0) return;
+    const c = memCards[idx];
+    if (!c || c.face || c.matched) return;
+    if (memFlipped.indexOf(idx) >= 0) return;
+    c.face = true;
+    memFlipped.push(idx);
+    if (memFlipped.length === 2) {
+      memMoves++;
+      const a = memCards[memFlipped[0]], b = memCards[memFlipped[1]];
+      if (a.pair === b.pair) {
+        a.matched = b.matched = true;
+        memMatched++;
+        memFlipped = [];
+        spawnBurstAt(W / 2, H * 0.45, COLORS.soft);
+        if (memMatched >= memCards.length / 2) {
+          memState = "won";
+          memMsg = "CLEARED";
+          if (memWager > 0) bankChips += memWager * 2;
+          else bankChips += 50;
+        }
+      } else {
+        memLock = 0.7;
+      }
+    }
+  }
+  function memGridHit(mx, my) {
+    // keyboard selection handled separately; this unused for now
+  }
+  let memCursor = 0;
+  function updateMemTitle() {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    const step = held(["ShiftLeft", "ShiftRight"]) ? 100 : 25;
+    if (just(["ArrowLeft", "KeyA", "Minus"])) memWager = clamp(memWager - step, 0, bankChips);
+    if (just(["ArrowRight", "KeyD", "Equal"])) memWager = clamp(memWager + step, 0, bankChips);
+    if (just(["Space", "Enter"])) startMemory();
+  }
+  function updateMemory(dt) {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (memLock > 0) {
+      memLock -= dt;
+      if (memLock <= 0) {
+        for (const i of memFlipped) { if (memCards[i] && !memCards[i].matched) memCards[i].face = false; }
+        memFlipped = [];
+        memLock = 0;
+      }
+    }
+    if (memState === "won" || memState === "lost") {
+      if (just(["Space", "Enter", "KeyR"])) {
+        if (memWager > bankChips) memWager = bankChips;
+        startMemory();
+      }
+      return;
+    }
+    if (memState !== "play" || memLock > 0) return;
+    const n = memCards.length;
+    if (just(["ArrowLeft", "KeyA"])) memCursor = (memCursor + n - 1) % n;
+    if (just(["ArrowRight", "KeyD"])) memCursor = (memCursor + 1) % n;
+    if (just(["ArrowUp", "KeyW"])) memCursor = (memCursor + n - memCols) % n;
+    if (just(["ArrowDown", "KeyS"])) memCursor = (memCursor + memCols) % n;
+    if (just(["Space", "Enter", "KeyF"])) memTryFlip(memCursor);
+  }
+  function drawMemTitle() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText("OFFSUIT HOUSE  \u00B7  MEMORY LOUNGE", W / 2, H * 0.14);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 48px " + FONT;
+    ctx.fillText("Memory Match", W / 2, H * 0.14 + 52);
+    ctx.fillStyle = COLORS.muted; ctx.font = "400 15px " + FONT;
+    ctx.fillText("Flip pairs  \u00B7  4\u00D73 grid  \u00B7  Optional wager doubles on clear", W / 2, H * 0.14 + 82);
+    const sy = H * 0.4, pw = Math.min(480, W * 0.7), ph = 52, px = (W - pw) / 2;
+    drawPanel(px, sy, pw, ph, 14, COLORS.accent);
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.accent; ctx.font = "500 13px " + FONT;
+    ctx.fillText("Wager (optional)", px + 24, sy + 32);
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+    ctx.fillText("\u25C0  " + (memWager === 0 ? "None (+50 clear)" : "\u25C6 " + formatChips(memWager)) + "  \u25B6", px + pw - 20, sy + 33);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 13px " + FONT;
+    ctx.fillText("Bank \u25C6 " + formatChips(bankChips) + "  \u00B7  Arrows select  \u00B7  SPACE flip", W / 2, sy + 90);
+    const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+    ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 18px " + FONT;
+    ctx.fillText("SPACE / ENTER \u2014 start", W / 2, sy + 140);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("Esc \u2014 back to Offsuit House", W / 2, H - 24);
+  }
+  function drawMemory() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(W, 56); ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.fillText("MEMORY", 24, 22);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+    ctx.fillText("Moves " + memMoves + "  \u00B7  Pairs " + memMatched + "/" + (memCards.length / 2), 24, 44);
+    drawBankHud();
+
+    const cw = 64, ch = 88, gapX = 16, gapY = 14;
+    const gridW = memCols * cw + (memCols - 1) * gapX;
+    const gridH = memRows * ch + (memRows - 1) * gapY;
+    const ox = (W - gridW) / 2, oy = (H - gridH) / 2 - 10;
+    for (let i = 0; i < memCards.length; i++) {
+      const c = memCards[i];
+      const col = i % memCols, row = (i / memCols) | 0;
+      const x = ox + col * (cw + gapX), y = oy + row * (ch + gapY);
+      const selected = i === memCursor && memState === "play";
+      roundRect(x, y, cw, ch, 10);
+      if (c.matched) {
+        ctx.fillStyle = "rgba(181,203,227,0.12)"; ctx.fill();
+        ctx.strokeStyle = COLORS.soft; ctx.lineWidth = 1.5;
+        roundRect(x, y, cw, ch, 10); ctx.stroke();
+        ctx.textAlign = "center";
+        ctx.fillStyle = suitColor(c.card);
+        ctx.font = "700 20px " + FONT; ctx.fillText(c.card.label, x + cw / 2, y + ch * 0.42);
+        ctx.font = "600 16px " + FONT; ctx.fillText(c.card.glyph, x + cw / 2, y + ch * 0.7);
+      } else if (c.face) {
+        ctx.fillStyle = COLORS.panel; ctx.fill();
+        ctx.strokeStyle = selected ? COLORS.accent : COLORS.border; ctx.lineWidth = selected ? 2.5 : 1.5;
+        roundRect(x, y, cw, ch, 10); ctx.stroke();
+        ctx.textAlign = "center";
+        ctx.fillStyle = suitColor(c.card);
+        ctx.font = "700 22px " + FONT; ctx.fillText(c.card.label, x + cw / 2, y + ch * 0.42);
+        ctx.font = "600 18px " + FONT; ctx.fillText(c.card.glyph, x + cw / 2, y + ch * 0.7);
+      } else {
+        ctx.fillStyle = "#0A0A0A"; ctx.fill();
+        ctx.strokeStyle = selected ? COLORS.accent : COLORS.border; ctx.lineWidth = selected ? 2.5 : 1.5;
+        roundRect(x, y, cw, ch, 10); ctx.stroke();
+        ctx.fillStyle = COLORS.muted; ctx.font = "700 18px " + FONT; ctx.textAlign = "center";
+        ctx.fillText("\u25C6", x + cw / 2, y + ch * 0.55);
+      }
+    }
+
+    if (memState === "won") {
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(0, 0, W, H);
+      drawOverlayPanel([
+        { text: "CLEARED", color: COLORS.accent, font: "700 40px " + FONT },
+        { text: memWager > 0 ? "Won \u25C6 " + formatChips(memWager * 2) : "+50 chips", color: COLORS.white, font: "500 20px " + FONT },
+      ], "SPACE / ENTER rematch  \u00B7  Esc house");
+    }
+
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, H - 56, W, 56);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, H - 56); ctx.lineTo(W, H - 56); ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 13px " + FONT;
+    ctx.fillText(memState === "play" ? "Arrows move  \u00B7  SPACE / ENTER / F flip  \u00B7  Esc house" : "Esc \u2014 Offsuit House", W / 2, H - 28);
+    drawParticles();
+  }
+
+  // ========== SHOWDOWN / HIGH CARD RACE ==========
+  let sdTitleFocus = 0;
+  let sdWager = 25;
+  let sdState = "idle"; // countdown | go | reveal | done
+  let sdCountdown = 0;
+  let sdGoFlash = 0;
+  let sdP1Pressed = false;
+  let sdP2Pressed = false;
+  let sdP1Time = 0;
+  let sdP2Time = 0;
+  let sdTimer = 0;
+  let sdCard1 = null;
+  let sdCard2 = null;
+  let sdWinner = null; // 1 | 2 | draw | false_start
+  let sdVsBot = true;
+  let sdBotReact = 0;
+  let sdMsg = "";
+
+  function startShowdown() {
+    sdWager = clamp(sdWager, 0, bankChips);
+    if (sdWager > 0) bankChips -= sdWager;
+    sdP1Pressed = sdP2Pressed = false;
+    sdP1Time = sdP2Time = 0;
+    sdCard1 = sdCard2 = null;
+    sdWinner = null;
+    sdMsg = "";
+    sdCountdown = 1.2 + Math.random() * 1.8;
+    sdGoFlash = 0;
+    sdTimer = 0;
+    sdBotReact = 0.18 + Math.random() * 0.28;
+    sdState = "countdown";
+    scene = "sd_play";
+    particles = [];
+  }
+  function sdReveal() {
+    const d = shuffleInPlace(freshDeck());
+    sdCard1 = d.pop();
+    sdCard2 = d.pop();
+    // reaction winner gets +2 rank boost conceptually: faster player wins ties on equal? 
+    // Actually: high card wins; on equal rank, faster reaction wins
+    let w = 0;
+    if (sdCard1.rank > sdCard2.rank) w = 1;
+    else if (sdCard2.rank > sdCard1.rank) w = 2;
+    else {
+      if (sdP1Time && sdP2Time) w = sdP1Time <= sdP2Time ? 1 : 2;
+      else if (sdP1Time) w = 1;
+      else if (sdP2Time) w = 2;
+      else w = 0;
+    }
+    // Must have reacted after GO
+    if (!sdP1Pressed && !sdP2Pressed) { sdWinner = 0; sdMsg = "NO ONE FLIPPED"; }
+    else if (sdVsBot) {
+      if (!sdP1Pressed) { sdWinner = 2; sdMsg = "TOO SLOW"; }
+      else {
+        sdWinner = w;
+        sdMsg = sdWinner === 1 ? "YOU WIN" : (sdWinner === 2 ? "BOT WINS" : "DRAW");
+      }
+    } else {
+      sdWinner = w;
+      sdMsg = w === 1 ? "P1 WINS" : w === 2 ? "P2 WINS" : "DRAW";
+    }
+    if (sdWinner === 1 && sdWager > 0) bankChips += sdWager * 2;
+    else if ((sdWinner === 0 || sdMsg === "NO ONE FLIPPED") && sdWager > 0) bankChips += sdWager;
+    if (sdWinner === 1) spawnBurstAt(W / 2, H * 0.4, COLORS.soft);
+    sdState = "done";
+  }
+  function updateSdTitle() {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (just(["ArrowUp", "KeyW"])) sdTitleFocus = (sdTitleFocus + 1) % 2;
+    if (just(["ArrowDown", "KeyS"])) sdTitleFocus = (sdTitleFocus + 1) % 2;
+    if (sdTitleFocus === 0) {
+      if (just(["ArrowLeft", "KeyA", "Digit1"])) sdVsBot = false;
+      if (just(["ArrowRight", "KeyD", "Digit2"])) sdVsBot = true;
+    } else {
+      const step = held(["ShiftLeft", "ShiftRight"]) ? 100 : 25;
+      if (just(["ArrowLeft", "KeyA", "Minus"])) sdWager = clamp(sdWager - step, 0, bankChips);
+      if (just(["ArrowRight", "KeyD", "Equal"])) sdWager = clamp(sdWager + step, 0, bankChips);
+    }
+    if (just(["Space", "Enter"])) startShowdown();
+  }
+  function updateShowdown(dt) {
+    if (just(["Escape"])) { leaveToHouse(); return; }
+    if (sdState === "done") {
+      if (just(["Space", "Enter", "KeyR"])) {
+        if (sdWager > bankChips) sdWager = bankChips;
+        startShowdown();
+      }
+      return;
+    }
+    if (sdState === "countdown") {
+      // false start
+      if (just(["Space", "KeyF"])) {
+        sdState = "done"; sdWinner = 2; sdMsg = "FALSE START";
+        // wager lost already
+        return;
+      }
+      if (!sdVsBot && just(["Enter", "KeyK"])) {
+        sdState = "done"; sdWinner = 1; sdMsg = "P2 FALSE START";
+        if (sdWager > 0) bankChips += sdWager * 2;
+        return;
+      }
+      sdCountdown -= dt;
+      if (sdCountdown <= 0) {
+        sdState = "go";
+        sdGoFlash = 0.35;
+        sdTimer = 0;
+        flashAlpha = 0.2;
+      }
+      return;
+    }
+    if (sdState === "go") {
+      sdTimer += dt;
+      sdGoFlash = Math.max(0, sdGoFlash - dt);
+      if (!sdP1Pressed && just(["Space", "KeyF"])) {
+        sdP1Pressed = true; sdP1Time = sdTimer;
+      }
+      if (sdVsBot) {
+        if (!sdP2Pressed && sdTimer >= sdBotReact) {
+          sdP2Pressed = true; sdP2Time = sdTimer;
+        }
+      } else if (!sdP2Pressed && just(["Enter", "KeyK"])) {
+        sdP2Pressed = true; sdP2Time = sdTimer;
+      }
+      if ((sdP1Pressed && sdP2Pressed) || sdTimer > 2.5) {
+        if (!sdP1Pressed && !sdP2Pressed) { /* wait a bit more */ if (sdTimer > 2.5) sdReveal(); }
+        else sdReveal();
+      }
+    }
+  }
+  function drawSdTitle() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText("OFFSUIT HOUSE  \u00B7  SHOWDOWN", W / 2, H * 0.1);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 48px " + FONT;
+    ctx.fillText("High Card Race", W / 2, H * 0.1 + 52);
+    ctx.fillStyle = COLORS.muted; ctx.font = "400 15px " + FONT;
+    ctx.fillText("Wait for GO  \u00B7  Flip first  \u00B7  Higher card wins (tie = faster)", W / 2, H * 0.1 + 82);
+
+    const mw = Math.min(220, W * 0.3), mh = 90, gap = 16, my = H * 0.28;
+    const m1x = W / 2 - gap / 2 - mw, m2x = W / 2 + gap / 2;
+    drawPanel(m1x, my, mw, mh, 18, !sdVsBot ? COLORS.accent : COLORS.border);
+    drawPanel(m2x, my, mw, mh, 18, sdVsBot ? COLORS.accent : COLORS.border);
+    ctx.fillStyle = !sdVsBot ? COLORS.accent : COLORS.white; ctx.font = "600 16px " + FONT;
+    ctx.fillText("TWO PLAYER", m1x + mw / 2, my + 36);
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("P1 SPACE/F  \u00B7  P2 ENTER/K", m1x + mw / 2, my + 62);
+    ctx.fillStyle = sdVsBot ? COLORS.accent : COLORS.white; ctx.font = "600 16px " + FONT;
+    ctx.fillText("VS BOT", m2x + mw / 2, my + 36);
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("You: SPACE / F", m2x + mw / 2, my + 62);
+    if (sdTitleFocus === 0) {
+      roundRect(m1x - 8, my - 8, mw * 2 + gap + 16, mh + 16, 24);
+      ctx.strokeStyle = COLORS.accent; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.4; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    const sy = my + mh + 28, pw = Math.min(480, W * 0.7), ph = 48, px = (W - pw) / 2;
+    drawPanel(px, sy, pw, ph, 14, sdTitleFocus === 1 ? COLORS.accent : COLORS.border);
+    ctx.textAlign = "left";
+    ctx.fillStyle = sdTitleFocus === 1 ? COLORS.accent : COLORS.muted; ctx.font = "500 13px " + FONT;
+    ctx.fillText("Wager", px + 24, sy + 30);
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT;
+    ctx.fillText("\u25C0  " + (sdWager === 0 ? "None" : "\u25C6 " + formatChips(sdWager)) + "  \u25B6", px + pw - 20, sy + 31);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("\u2191\u2193 focus  \u00B7  Bank \u25C6 " + formatChips(bankChips) + "  \u00B7  False start loses", W / 2, sy + 78);
+    const pulse = 0.55 + 0.45 * Math.sin(startPulse * 3.2);
+    ctx.globalAlpha = pulse; ctx.fillStyle = COLORS.accent; ctx.font = "600 18px " + FONT;
+    ctx.fillText("SPACE / ENTER \u2014 ready", W / 2, sy + 120);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT;
+    ctx.fillText("Esc \u2014 back to Offsuit House", W / 2, H - 24);
+  }
+  function drawShowdown() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(W, 56); ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted; ctx.font = "500 12px " + FONT; ctx.fillText("SHOWDOWN", 24, 22);
+    ctx.fillStyle = COLORS.white; ctx.font = "700 16px " + FONT; ctx.fillText("High Card Race", 24, 44);
+    drawBankHud();
+    if (sdWager > 0) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = COLORS.accent; ctx.font = "500 12px " + FONT;
+      ctx.fillText("Wager \u25C6 " + formatChips(sdWager), W / 2, 34);
+    }
+
+    ctx.textAlign = "center";
+    if (sdState === "countdown") {
+      ctx.fillStyle = COLORS.muted; ctx.font = "600 18px " + FONT;
+      ctx.fillText("Wait for it\u2026", W / 2, H * 0.35);
+      ctx.fillStyle = COLORS.border; ctx.font = "700 64px " + FONT;
+      ctx.fillText("\u2022", W / 2, H * 0.5);
+      ctx.fillStyle = COLORS.muted; ctx.font = "500 14px " + FONT;
+      ctx.fillText("Don\u2019t press early", W / 2, H * 0.62);
+    } else if (sdState === "go") {
+      ctx.fillStyle = COLORS.accent; ctx.font = "700 72px " + FONT;
+      ctx.fillText("GO", W / 2, H * 0.38);
+      ctx.fillStyle = COLORS.white; ctx.font = "600 16px " + FONT;
+      ctx.fillText(sdVsBot ? "SPACE / F \u2014 flip!" : "P1 SPACE/F   P2 ENTER/K", W / 2, H * 0.48);
+      if (sdP1Pressed) {
+        ctx.fillStyle = COLORS.soft; ctx.font = "500 14px " + FONT;
+        ctx.fillText("P1  " + (sdP1Time * 1000 | 0) + " ms", W * 0.3, H * 0.58);
+      }
+      if (sdP2Pressed) {
+        ctx.fillStyle = COLORS.p2; ctx.font = "500 14px " + FONT;
+        ctx.fillText((sdVsBot ? "BOT  " : "P2  ") + (sdP2Time * 1000 | 0) + " ms", W * 0.7, H * 0.58);
+      }
+    } else if (sdState === "done") {
+      if (sdCard1 && sdCard2) {
+        drawCardFace(W * 0.35, H * 0.32, sdCard1, 1.35, true);
+        drawCardFace(W * 0.65, H * 0.32, sdCard2, 1.35, true);
+        ctx.fillStyle = COLORS.soft; ctx.font = "600 13px " + FONT;
+        ctx.fillText("P1", W * 0.35, H * 0.32 - 12);
+        ctx.fillStyle = COLORS.p2;
+        ctx.fillText(sdVsBot ? "BOT" : "P2", W * 0.65, H * 0.32 - 12);
+      }
+      ctx.fillStyle = COLORS.accent; ctx.font = "700 36px " + FONT;
+      ctx.fillText(sdMsg || "\u2014", W / 2, H * 0.62);
+      if (sdP1Time || sdP2Time) {
+        ctx.fillStyle = COLORS.muted; ctx.font = "500 13px " + FONT;
+        ctx.fillText(
+          (sdP1Time ? "P1 " + (sdP1Time * 1000 | 0) + "ms" : "P1 \u2014") + "   \u00B7   " +
+          (sdP2Time ? (sdVsBot ? "Bot " : "P2 ") + (sdP2Time * 1000 | 0) + "ms" : (sdVsBot ? "Bot" : "P2") + " \u2014"),
+          W / 2, H * 0.7
+        );
+      }
+    }
+
+    if (flashAlpha > 0) {
+      ctx.fillStyle = "rgba(255,255,125," + (flashAlpha * 0.5) + ")";
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.fillStyle = COLORS.panel; ctx.fillRect(0, H - 56, W, 56);
+    ctx.strokeStyle = COLORS.border; ctx.beginPath(); ctx.moveTo(0, H - 56); ctx.lineTo(W, H - 56); ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = sdState === "done" ? COLORS.accent : COLORS.muted; ctx.font = "500 14px " + FONT;
+    ctx.fillText(sdState === "done" ? "SPACE / ENTER / R again  \u00B7  Esc house" : "Esc \u2014 Offsuit House", W / 2, H - 28);
+    drawParticles();
+  }
+
+
+  // ========== MAIN LOOP ==========
+  function update(dt) {
+    startPulse += dt;
+    flashAlpha = Math.max(0, flashAlpha - dt * 1.6);
+    updateParticles(dt);
+    if (scene === "house") updateHouse(dt);
+    else if (scene === "poker_title") updatePokerTitle();
+    else if (scene === "poker") updatePoker(dt);
+    else if (scene === "duel_title") updateDuelTitle();
+    else if (scene === "duel_playing" || scene === "duel_roundend" || scene === "duel_matchend") updateDuel(dt);
+    else if (scene === "bj_title") updateBjTitle();
+    else if (scene === "bj_play") updateBlackjack(dt);
+    else if (scene === "mem_title") updateMemTitle();
+    else if (scene === "mem_play") updateMemory(dt);
+    else if (scene === "sd_title") updateSdTitle();
+    else if (scene === "sd_play") updateShowdown(dt);
+    clearPressed();
+  }
+
+  function draw() {
+    if (scene === "house") drawHouse();
+    else if (scene === "poker_title") drawPokerTitle();
+    else if (scene === "poker") drawPoker();
+    else if (scene === "duel_title") drawDuelTitle();
+    else if (scene === "duel_playing" || scene === "duel_roundend" || scene === "duel_matchend") drawDuelPlay();
+    else if (scene === "bj_title") drawBjTitle();
+    else if (scene === "bj_play") drawBlackjack();
+    else if (scene === "mem_title") drawMemTitle();
+    else if (scene === "mem_play") drawMemory();
+    else if (scene === "sd_title") drawSdTitle();
+    else if (scene === "sd_play") drawShowdown();
+  }
+
+  function frame(ts) {
+    if (!lastTime) lastTime = ts;
+    let dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    if (dt > 0.05) dt = 0.05;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
