@@ -3,6 +3,8 @@ import { getProfile, updateProfile, cleanName } from './profile.js';
 import { history } from './storage.js';
 import * as rooms from './rooms.js';
 import { mountWordle, statsView } from './wordle.js';
+import { mountFlappy, flappyCard, flappyStats } from './flappy.js';
+import { kv } from './storage.js';
 
 const $ = id => document.getElementById(id);
 let profile = getProfile();
@@ -39,10 +41,11 @@ function route() {
   document.body.classList.toggle('in-room', page === 'room');
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === (page === 'daily' ? 'daily' : page === 'me' ? 'me' : 'rooms')));
   if (page !== 'room') leaveRoom();
+  if (page !== 'daily') { flappy.pause(); document.body.classList.remove('flappy-on'); }
   if (page === 'host') { show('vHost'); $('hostForm').hidden = false; $('hostDone').hidden = true; $('hostName').value = profile.name; ($('hostName').value ? $('hostTitle') : $('hostName')).focus(); }
   else if (page === 'join') { show('vJoin'); $('joinCode').value = rooms.normCode(arg || ''); $('joinName').value = profile.name; $('joinErr').textContent = ''; ($('joinCode').value.length === 6 ? $('joinName') : $('joinCode')).focus(); }
   else if (page === 'room' && rooms.validCode(rooms.normCode(arg))) { show('vRoom'); enterRoom(rooms.normCode(arg)); }
-  else if (page === 'daily') { show('vDaily'); wordle.refresh(); }
+  else if (page === 'daily') { show('vDaily'); selectGame(kv.get('daily-game') === 'flappy' ? 'flappy' : 'wordle'); }
   else if (page === 'me') { show('vMe'); renderMe(); }
   else { show('vRooms'); renderHome(); }
 }
@@ -127,6 +130,14 @@ $('joinF').addEventListener('submit', async e => {
 // ---------- room ----------
 function renderCard(card) {
   const box = el('div', 'bubble rcard');
+  const n0 = v => Math.max(0, Math.floor(Number(v) || 0));
+  const kvRow = pairs => { const kvs = el('div', 'kvs'); for (const [k, v] of pairs) { const d = el('div'); d.append(el('b', null, String(v)), el('span', null, k)); kvs.append(d); } box.append(kvs); };
+  if (card.game === 'flappy') {
+    box.append(el('div', 'h', '🐤 Flappy v2 · today ' + n0(card.today)));
+    box.append(el('div', 's', String(card.date || '').slice(0, 10) + ' · ' + n0(card.todayGames) + (n0(card.todayGames) === 1 ? ' run' : ' runs') + ' today'));
+    kvRow([['Today', n0(card.today)], ['Best', n0(card.best)], ['Last', n0(card.last)], ['Level', n0(card.level) || 1]]);
+    return box;
+  }
   if (card.game !== 'wordle') { box.textContent = 'Shared a result'; return box; }
   box.append(el('div', 'h', '🔤 Daily #' + (Number(card.no) || '?') + ' · ' + (card.won ? Math.min(6, Number(card.n) || 0) + '/6' : card.over ? 'X/6' : 'in progress')));
   box.append(el('div', 's', String(card.date || '').slice(0, 10)));
@@ -200,6 +211,18 @@ $('roomShare').addEventListener('click', () => { if (connCode) shareInvite(connC
 
 // ---------- daily ----------
 const wordle = mountWordle($('wordle'), { onShare: openPicker, toast: m => toast(m, null, 1600) });
+const flappy = mountFlappy($('flappyBox'), { onShare: openPicker });
+function renderFlBar() { const s = flappyStats(); $('flBar').textContent = 'Today\u2019s best ' + s.today + ' · All-time best ' + s.best + ' · resets at midnight Sydney'; }
+function selectGame(g) {
+  kv.set('daily-game', g);
+  document.querySelectorAll('#gameSeg button').forEach(b => { const on = b.dataset.g === g; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  $('wordle').hidden = g !== 'wordle'; $('flShare').hidden = g !== 'flappy';
+  document.body.classList.toggle('flappy-on', g === 'flappy');
+  if (g === 'flappy') { renderFlBar(); flappy.show(); } else { flappy.hide(); wordle.refresh(); }
+}
+$('gameSeg').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) selectGame(b.dataset.g); });
+$('flShare').addEventListener('click', () => openPicker(flappyCard()));
+window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.type === 'offsuit-stats' && e.data.game === 'flappy') setTimeout(renderFlBar, 0); });
 function openPicker(card) {
   $('pkErr').textContent = '';
   const prev = $('pkPrev'); prev.textContent = ''; prev.append(renderCard(card));
@@ -232,5 +255,5 @@ $('meSave').addEventListener('click', () => { const nm = cleanName($('meName').v
 $('meClear').addEventListener('click', async () => { if (!confirm('Delete the saved chat history on this device?')) return; for (const r of rooms.roomList()) await history.clear(r.code); renderMe(); toast('History cleared'); });
 
 // test/debug hooks (read-only)
-window.offsuitApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
+window.offsuitApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), flappy: () => flappy.state(), flappyStats, flappyLoaded: () => flappy.loaded(), room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
 route();

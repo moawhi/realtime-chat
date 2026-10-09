@@ -90,7 +90,14 @@
     </section>
 
     <!-- Daily -->
-    <section class="view" id="vDaily"><div id="wordle" class="wl"></div></section>
+    <section class="view" id="vDaily">
+      <div class="dsw">
+        <div class="seg" id="gameSeg" role="tablist" aria-label="Daily game"><button type="button" role="tab" data-g="wordle">🔤 Wordle</button><button type="button" role="tab" data-g="flappy">🐤 Flappy</button></div>
+        <button class="chip" id="flShare" type="button" hidden>Share</button>
+      </div>
+      <div id="wordle" class="wl"></div>
+      <div id="flappyBox" class="fl" hidden><div class="fl-bar muted small" id="flBar"></div></div>
+    </section>
 
     <!-- Me -->
     <section class="view" id="vMe">
