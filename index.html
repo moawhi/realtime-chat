@@ -3,10 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Offsuit">
+<meta name="theme-color" content="#000000">
 <title>Offsuit House</title>
+<script>
+// Home-screen (standalone) iPhone: the page runs under the status bar. Normally env(safe-area-inset-top)
+// covers it; if the browser reports 0 there, fall back to the status-bar height for this iPhone size.
+(function () {
+  function fix() {
+    try {
+      var de = document.documentElement;
+      var sa = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+      de.classList.toggle('standalone', sa);
+      de.style.removeProperty('--sat');
+      if (!sa) return;
+      var p = document.createElement('div'); p.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;padding-top:env(safe-area-inset-top)';
+      de.appendChild(p); var v = parseFloat(getComputedStyle(p).paddingTop) || 0; p.remove();
+      if (v < 1 && /iPhone|iPod/.test(navigator.userAgent) && innerHeight > innerWidth) {
+        var h = Math.max(screen.height, screen.width);
+        de.style.setProperty('--sat', (h >= 852 ? 54 : h >= 812 ? 47 : 20) + 'px');
+      }
+    } catch (e) {}
+  }
+  fix(); addEventListener('resize', fix); addEventListener('orientationchange', fix);
+})();
+</script>
 <style>
   @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/inter-latin.woff2") format("woff2")}
-  :root{--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D;--hdr:52px;--chatw:360px}
+  :root{--sat:env(safe-area-inset-top,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D;--hdr:52px;--chatw:360px}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
   body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100vh;height:100dvh}
@@ -18,7 +45,7 @@
   input:focus{border-color:var(--accent)}
 
   /* ---- top bar ---- */
-  .top{flex:none;height:var(--hdr);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg)}
+  .top{flex:none;height:calc(var(--hdr) + var(--sat));display:flex;align-items:center;justify-content:space-between;gap:12px;padding:var(--sat) calc(16px + var(--sar)) 0 calc(16px + var(--sal));border-bottom:1px solid var(--border);background:var(--bg)}
   .brand{font-weight:600;letter-spacing:-.01em;white-space:nowrap}
   .brand span{color:var(--accent)}
   .keys{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -86,7 +113,6 @@
   /* narrow screens: bottom tabs Chat | Wordle | Flappy (Offsuit House is desktop-only and never loaded here) */
   @media (max-width:860px){
     .keys,#toggleChat,.gsw{display:none}
-    .top{height:calc(var(--hdr) + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
     .tabs{display:flex}
     aside,body.collapsed aside{display:flex;width:100%;border-left:0}
     body.m-game aside{display:none}
@@ -174,11 +200,11 @@
       <div class="lbwrap">
         <h2>Global ranking</h2>
         <p class="sub">Players active in the last 12 hours. Scores are self-reported by each browser, so this isn't cheat-proof — just for fun.</p>
-        <div class="lbtop"><div class="seg2" id="lbTabs"><button type="button" data-lb="flappy" class="on">🐤 Flappy</button><button type="button" data-lb="wordle">🔤 Wordle</button></div><button class="link" id="lbRefresh" type="button">Refresh</button></div>
+        <div class="lbtop"><div class="seg2" id="lbTabs"><button type="button" data-lb="flappy" class="on">🐤 Flappy v2</button><button type="button" data-lb="wordle">🔤 Wordle</button></div><button class="link" id="lbRefresh" type="button">Refresh</button></div>
         <div id="lbBody"><div class="empty">Loading…</div></div>
         <div class="lbme"><input id="lbName" maxlength="32" placeholder="Your name on the board"><button id="lbSubmit" type="button">Submit my scores</button></div>
         <div class="sub" id="lbMsg" style="margin-top:8px"></div>
-        <p class="sub">Flappy ranks by best score. Wordle ranks by current daily streak, then win %, then fewest average guesses. Offsuit House chips aren't ranked: the game lets you set your chips with [ and ].</p>
+        <p class="sub">Flappy v2 ranks by best score under the new, harder rules (scores from the easier classic version aren't ranked). Wordle ranks by current daily streak, then win %, then fewest average guesses. Offsuit House chips aren't ranked: the game lets you set your chips with [ and ].</p>
       </div>
     </div>
   </div>
@@ -781,7 +807,7 @@
   window.addEventListener('pagehide', () => { if (room && key) saveMyRoom(room, isPublic, { seen: Date.now() }); });
 
   // ---- game stats: read from this browser's storage (same origin as the games) ----
-  const GAME_NAMES = { wordle: 'Wordle', flappy: 'Flappy', house: 'Offsuit House' };
+  const GAME_NAMES = { wordle: 'Wordle', flappy: 'Flappy v2', house: 'Offsuit House' };
   const GAME_ICONS = { wordle: '🔤', flappy: '🐤', house: '🏠' };
   let houseChips = null;
   const num = (v, lo, hi) => { v = Math.floor(Number(v)); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo; };
@@ -815,7 +841,9 @@
     return { played, wins, winPct: played ? Math.round(wins / played * 100) : 0, streak: alive ? num(s.streak, 0, played) : 0, maxStreak: num(s.maxStreak, 0, played), avg, date: sydDate(), today: todayRes };
   }
   function flappyStats() {
-    return { best: num(localStorage.getItem('flappy-best'), 0, 100000), last: num(localStorage.getItem('flappy-last'), 0, 100000), games: num(localStorage.getItem('flappy-games'), 0, 1000000) };
+    // v2 (harder rules) has its own keys; the old best is shown as "classic"
+    const g = k => localStorage.getItem('flappy2-' + k);
+    return { v: 2, best: num(g('best'), 0, 100000), last: num(g('last'), 0, 100000), games: num(g('games'), 0, 1000000), classic: num(localStorage.getItem('flappy-best'), 0, 100000) };
   }
   function statsFor(game) {
     if (game === 'wordle') return wordleStats();
@@ -966,7 +994,11 @@
       } else line('No daily game today yet', 'ssub');
       kv([['Played', num(s.played, 0, 1e5)], ['Win %', num(s.winPct, 0, 100)], ['Streak', num(s.streak, 0, 1e5)], ['Avg', s.avg ? Number(s.avg).toFixed(2) : '–']]);
     } else if (game === 'flappy') {
-      kv([['Best', num(s.best, 0, 1e5)], ['Last', num(s.last, 0, 1e5)], ['Games', num(s.games, 0, 1e6)]]);
+      if (s.v !== 2) { h.textContent = GAME_ICONS.flappy + ' Flappy (classic)'; kv([['Best', num(s.best, 0, 1e5)], ['Last', num(s.last, 0, 1e5)], ['Games', num(s.games, 0, 1e6)]]); }
+      else {
+        kv([['Best', num(s.best, 0, 1e5)], ['Last', num(s.last, 0, 1e5)], ['Games', num(s.games, 0, 1e6)]]);
+        if (num(s.classic, 0, 1e5)) line('Classic best ' + num(s.classic, 0, 1e5) + ' (easier rules)', 'ssub');
+      }
     } else if (game === 'house') {
       kv([['Chips', '◆ ' + num(s.chips, 0, 1e7).toLocaleString()]]);
     }
@@ -993,6 +1025,8 @@
 
   // ---- global leaderboard (public ntfy topic; players active in the last ~12h) ----
   const LB_TOPIC = APP + '-leaderboard-v1';
+  // Board keys on the wire: Flappy v2 scores are 'flappy2'; old 'flappy' (easier rules) entries are ignored.
+  const WIRE = { flappy: 'flappy2', wordle: 'wordle' }, FROM_WIRE = { flappy2: 'flappy', wordle: 'wordle' };
   const LIMITS = { flappy: 2000, wordleStreak: 3650, wordlePlayed: 3650 };
   let lbGame = 'flappy', lbData = { flappy: [], wordle: [] };
   const lbName = () => clean(localStorage.getItem('chat-name') || '') .slice(0, 32);
@@ -1005,11 +1039,11 @@
     const nm = lbName(); if (!nm) return false;
     const s = scorePayload(game); if (!s) return false;
     const sig = JSON.stringify([nm, s]);
-    if (!force && localStorage.getItem('lb-sent-' + game) === sig) return false; // unchanged since last submit
+    if (!force && localStorage.getItem('lb-sent-' + WIRE[game]) === sig) return false; // unchanged since last submit
     try {
-      const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: LB_TOPIC, message: JSON.stringify({ v: 1, t: 'score', game, id: myId, name: nm, s, ts: Date.now() }) }) });
+      const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic: LB_TOPIC, message: JSON.stringify({ v: 1, t: 'score', game: WIRE[game], id: myId, name: nm, s, ts: Date.now() }) }) });
       if (!r.ok) return false;
-      localStorage.setItem('lb-sent-' + game, sig);
+      localStorage.setItem('lb-sent-' + WIRE[game], sig);
       setTimeout(() => { if ($('lbView').classList.contains('on')) loadBoard(); }, 2500);
       return true;
     } catch { return false; }
@@ -1041,12 +1075,13 @@
         if (n.event !== 'message' || !p || p.v !== 1 || typeof p.id !== 'string') continue;
         const id = p.id.slice(0, 32), t = n.time;
         if (p.t === 'retract') { retracted.set(id, Math.max(retracted.get(id) || 0, t)); continue; }
-        if (p.t !== 'score' || !latest[p.game]) continue;
-        const s = sane(p.game, p.s); if (!s) continue;
+        const g = FROM_WIRE[p.game];
+        if (p.t !== 'score' || !g) continue;
+        const s = sane(g, p.s); if (!s) continue;
         const e = { id, name: clean(String(p.name || '?')).slice(0, 32) || '?', s, t };
-        const m = latest[p.game], prev = m.get(id);
+        const m = latest[g], prev = m.get(id);
         // dedupe by player id: keep the best entry (newest wins ties, which also picks up name changes)
-        if (!prev || better[p.game](e, prev) < 0 || (better[p.game](e, prev) === 0 && e.t >= prev.t)) m.set(id, e);
+        if (!prev || better[g](e, prev) < 0 || (better[g](e, prev) === 0 && e.t >= prev.t)) m.set(id, e);
       }
       for (const g of ['flappy', 'wordle']) lbData[g] = [...latest[g].values()].filter(e => !(retracted.get(e.id) > e.t)).sort(better[g]).slice(0, 20);
       renderBoard();
