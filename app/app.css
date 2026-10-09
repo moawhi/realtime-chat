@@ -88,7 +88,7 @@ main{flex:1;min-height:0;position:relative}
 .ad{flex:none;display:flex;justify-content:center;padding:6px 0;border-top:1px solid var(--border);background:#050505}
 .ad span{width:320px;height:50px;display:flex;align-items:center;justify-content:center;border:1px dashed #3a3a3a;border-radius:6px;color:#5a5a5a;font-size:12px;letter-spacing:.06em;text-transform:uppercase}
 .tabs{flex:none;display:flex;border-top:1px solid var(--border);padding-bottom:var(--sab);background:var(--bg)}
-.tabs a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 0 10px;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600}
+.tabs a{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:none;flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 0 10px;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600}
 .tabs a .ic{font-size:18px;line-height:1.1}
 .tabs a.on{color:var(--accent)}
 body.in-room .tabs,body.in-room .ad{display:none}
@@ -104,24 +104,6 @@ body.in-room .tabs,body.in-room .ad{display:none}
 .toast.on{display:flex}
 .toast button{white-space:nowrap}
 
-/* wordle */
-.wl{flex:1;min-height:0;display:flex;flex-direction:column}
-.wl-head{flex:none;display:flex;justify-content:space-between;align-items:center;padding:10px 14px}
-.wl-board{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px 10px}
-.wl-grid{display:grid;grid-template-rows:repeat(6,1fr);gap:5px;height:min(100%,calc((min(100vw,480px) - 60px) * 1.2));max-height:360px;aspect-ratio:5/6}
-.wl-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
-.wl-row.shake{animation:shake .45s}
-@keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
-.wl-tile{display:flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:6px;font-weight:800;font-size:clamp(18px,6vw,28px);text-transform:uppercase}
-.wl-tile.filled{border-color:#4a4a4a}
-.wl-tile.correct,.wl-tile.present,.wl-tile.absent{border-color:transparent;animation:flip .45s ease both}
-.wl-tile.correct{background:var(--green)} .wl-tile.present{background:var(--yellow);color:#000} .wl-tile.absent{background:var(--grey)}
-@keyframes flip{0%{transform:rotateX(0)}50%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
-.wl-kb{flex:none;padding:6px 5px 8px;display:flex;flex-direction:column;gap:6px}
-.wl-kr{display:flex;gap:5px;justify-content:center}
-.wl-key{flex:1;max-width:44px;height:52px;border-radius:6px;background:var(--panel);border:1px solid var(--border);color:var(--text);font-weight:700;font-size:15px;text-transform:uppercase;padding:0;touch-action:manipulation}
-.wl-key.wide{max-width:66px;flex:1.5;font-size:12px;text-transform:none}
-.wl-key.correct{background:var(--green);border-color:var(--green)} .wl-key.present{background:var(--yellow);border-color:var(--yellow);color:#000} .wl-key.absent{background:#111;color:#555;border-color:#1c1c1c}
 .wl-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin:12px 0}
 .wl-stats b{display:block;font-size:26px} .wl-stats span{font-size:11px;color:var(--muted)}
 .wl-dist{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
@@ -130,15 +112,66 @@ body.in-room .tabs,body.in-room .ad{display:none}
 .bar i.hl{background:var(--accent);color:#000}
 #wlShare{width:100%}
 
-/* daily game switcher */
-.dsw{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px 0}
-.seg{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;flex:1;max-width:280px}
-.seg button{flex:1;background:none;border:0;color:var(--muted);font-size:14px;font-weight:700;padding:8px 10px}
-.seg button.on{background:var(--panel);color:var(--accent)}
+
+/* ---- daily games: slim header shared by Wordle and Flappy ---- */
+.ghead{flex:none;display:flex;justify-content:space-between;align-items:center;gap:10px;height:44px;padding:0 16px;border-bottom:1px solid var(--border)}
+.ghead .gt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.ghead .gt b{font-size:15px;margin-right:4px}
+
+/* ---- wordle ---- */
+.wl{flex:1;min-height:0;display:flex;flex-direction:column}
+.wl[hidden]{display:none}
+/* the board fills whatever height is left and stays square-tiled and centred */
+.wl-board{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px 16px;container-type:size}
+.wl-grid{--gap:6px;width:min(100cqw,calc((100cqh - 5 * var(--gap)) * 5 / 6 + 4 * var(--gap)),330px);display:grid;grid-template-rows:repeat(6,auto);gap:var(--gap);container-type:inline-size}
+.wl-row{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--gap)}
+.wl-row.shake{animation:shake .45s}
+@keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+.wl-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:6px;font-weight:800;font-size:calc((100cqw - 24px) / 5 * .5);line-height:1;text-transform:uppercase}
+.wl-tile.filled{border-color:#4a4a4a}
+.wl-tile.correct,.wl-tile.present,.wl-tile.absent{border-color:transparent;animation:flip .45s ease both}
+.wl-tile.correct{background:var(--green)} .wl-tile.present{background:var(--yellow);color:#000} .wl-tile.absent{background:var(--grey)}
+@keyframes flip{0%{transform:rotateX(0)}50%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+/* keyboard: full width, even 6px gaps */
+.wl-kb{flex:none;display:flex;flex-direction:column;gap:6px;padding:4px 6px 10px}
+.wl-kr{display:flex;gap:6px}
+.wl-half{flex:.5}
+.wl-key{flex:1;min-width:0;height:clamp(40px,7.2vh,56px);border-radius:6px;background:var(--panel);border:1px solid var(--border);color:var(--text);font-weight:700;font-size:15px;text-transform:uppercase;padding:0;touch-action:manipulation}
+.wl-key.wide{flex:1.5;font-size:12px;text-transform:none}
+.wl-key.correct{background:var(--green);border-color:var(--green)} .wl-key.present{background:var(--yellow);border-color:var(--yellow);color:#000} .wl-key.absent{background:#111;color:#555;border-color:#1c1c1c}
+
+/* ---- flappy ---- */
 .fl{flex:1;min-height:0;display:flex;flex-direction:column}
 .fl[hidden]{display:none}
-.wl[hidden]{display:none}
-.fl-bar{flex:none;text-align:center;padding:6px 0}
 .fl-frame{flex:1;min-height:0;width:100%;border:0;display:block;background:#000}
-/* Flappy uses the full height: no ad strip while it is on screen */
-body.flappy-on .ad{display:none}
+body.flappy-on .ad{display:none} /* Flappy gets the full height */
+
+/* ---- Daily tab = game picker ---- */
+.tabs{position:relative;z-index:46}
+.tabs a .lb{display:flex;align-items:center;gap:3px}
+.chev{display:inline-flex;flex-direction:column;gap:2px;opacity:.75;margin-left:1px}
+.chev::before,.chev::after{content:"";width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent}
+.chev::before{border-bottom:4px solid currentColor}
+.chev::after{border-top:4px solid currentColor}
+.tabs a.on .chev{opacity:1}
+.gpick-bg{position:fixed;inset:0;z-index:44;display:none}
+.gpick-bg.on{display:block}
+.gpick{position:fixed;z-index:47;display:none;width:200px;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.7);padding:6px;transform-origin:bottom center}
+.gpick.on{display:block;animation:rise .16s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+.gpick-h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px 4px}
+.gpick-list{max-height:170px;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain}
+.gopt{scroll-snap-align:center;display:flex;align-items:center;gap:10px;width:100%;height:52px;background:none;border:0;border-radius:10px;color:var(--text);padding:0 10px;text-align:left;font-weight:600}
+.gopt .gi{font-size:22px}
+.gopt small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+.gopt.on{background:#000;color:var(--accent);box-shadow:inset 0 0 0 1px #3a3a1e}
+.gopt:disabled{opacity:.4}
+
+/* short phones (iPhone SE 1st gen etc.): give the board every pixel we can */
+@media (max-height:640px){
+  .ghead{height:38px}
+  .wl-board{padding:8px 16px}
+  .wl-grid{--gap:5px}
+  .wl-kb{gap:6px;padding:2px 6px 6px}
+  .wl-key{height:38px}
+}

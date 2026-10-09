@@ -91,12 +91,8 @@
 
     <!-- Daily -->
     <section class="view" id="vDaily">
-      <div class="dsw">
-        <div class="seg" id="gameSeg" role="tablist" aria-label="Daily game"><button type="button" role="tab" data-g="wordle">🔤 Wordle</button><button type="button" role="tab" data-g="flappy">🐤 Flappy</button></div>
-        <button class="chip" id="flShare" type="button" hidden>Share</button>
-      </div>
       <div id="wordle" class="wl"></div>
-      <div id="flappyBox" class="fl" hidden><div class="fl-bar muted small" id="flBar"></div></div>
+      <div id="flappyBox" class="fl" hidden><div class="ghead"><div class="gt"><b>Flappy</b> <span class="muted" id="flBar"></span></div><button class="chip" id="flShare" type="button">Share</button></div></div>
     </section>
 
     <!-- Me -->
@@ -123,11 +119,16 @@
   <div class="ad" id="ad" aria-label="Advertisement placeholder"><span>Ad space · 320×50</span></div>
   <nav class="tabs" id="tabs">
     <a href="#/" data-tab="rooms"><span class="ic">💬</span>Rooms</a>
-    <a href="#/daily" data-tab="daily"><span class="ic">🔤</span>Daily</a>
+    <a href="#/daily" data-tab="daily" id="dailyTab" aria-haspopup="listbox" aria-label="Daily game (tap again to switch game)"><span class="ic" id="dailyIc">🔤</span><span class="lb"><span id="dailyLbl">Wordle</span><i class="chev" aria-hidden="true"></i></span></a>
     <a href="#/me" data-tab="me"><span class="ic">👤</span>Me</a>
   </nav>
 </div>
 
+<div class="gpick-bg" id="gpickBg"></div>
+<div class="gpick" id="gpick" role="listbox" aria-label="Choose the daily game">
+  <div class="gpick-h">Daily game</div>
+  <div class="gpick-list" id="gpickList"></div>
+</div>
 <div class="sheet-bg" id="picker"><div class="sheet" role="dialog" aria-labelledby="pkTitle">
   <div class="sheet-h"><b id="pkTitle">Share result to…</b><button class="chip" id="pkClose" type="button">Close</button></div>
   <div id="pkPrev"></div>

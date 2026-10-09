@@ -42,10 +42,11 @@ function route() {
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === (page === 'daily' ? 'daily' : page === 'me' ? 'me' : 'rooms')));
   if (page !== 'room') leaveRoom();
   if (page !== 'daily') { flappy.pause(); document.body.classList.remove('flappy-on'); }
+  closeGamePicker();
   if (page === 'host') { show('vHost'); $('hostForm').hidden = false; $('hostDone').hidden = true; $('hostName').value = profile.name; ($('hostName').value ? $('hostTitle') : $('hostName')).focus(); }
   else if (page === 'join') { show('vJoin'); $('joinCode').value = rooms.normCode(arg || ''); $('joinName').value = profile.name; $('joinErr').textContent = ''; ($('joinCode').value.length === 6 ? $('joinName') : $('joinCode')).focus(); }
   else if (page === 'room' && rooms.validCode(rooms.normCode(arg))) { show('vRoom'); enterRoom(rooms.normCode(arg)); }
-  else if (page === 'daily') { show('vDaily'); selectGame(kv.get('daily-game') === 'flappy' ? 'flappy' : 'wordle'); }
+  else if (page === 'daily') { show('vDaily'); selectGame(curGame()); }
   else if (page === 'me') { show('vMe'); renderMe(); }
   else { show('vRooms'); renderHome(); }
 }
@@ -212,15 +213,62 @@ $('roomShare').addEventListener('click', () => { if (connCode) shareInvite(connC
 // ---------- daily ----------
 const wordle = mountWordle($('wordle'), { onShare: openPicker, toast: m => toast(m, null, 1600) });
 const flappy = mountFlappy($('flappyBox'), { onShare: openPicker });
-function renderFlBar() { const s = flappyStats(); $('flBar').textContent = 'Today\u2019s best ' + s.today + ' · All-time best ' + s.best + ' · resets at midnight Sydney'; }
+function renderFlBar() { const s = flappyStats(); $('flBar').textContent = '· today ' + s.today + ' · best ' + s.best; }
+// Daily games (more can be added here later)
+const GAMES = [
+  { id: 'wordle', icon: '🔤', name: 'Wordle', sub: 'Daily word' },
+  { id: 'flappy', icon: '🐤', name: 'Flappy', sub: 'Daily best score' },
+];
+const curGame = () => (GAMES.find(x => x.id === kv.get('daily-game')) || GAMES[0]).id;
+const onDaily = () => /^#\/daily/.test(location.hash);
+function renderDailyTab() { const g = GAMES.find(x => x.id === curGame()); $('dailyIc').textContent = g.icon; $('dailyLbl').textContent = g.name; }
 function selectGame(g) {
-  kv.set('daily-game', g);
-  document.querySelectorAll('#gameSeg button').forEach(b => { const on = b.dataset.g === g; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
-  $('wordle').hidden = g !== 'wordle'; $('flShare').hidden = g !== 'flappy';
+  kv.set('daily-game', g); renderDailyTab();
+  if (!onDaily()) return;
+  $('wordle').hidden = g !== 'wordle';
   document.body.classList.toggle('flappy-on', g === 'flappy');
   if (g === 'flappy') { renderFlBar(); flappy.show(); } else { flappy.hide(); wordle.refresh(); }
 }
-$('gameSeg').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) selectGame(b.dataset.g); });
+function chooseGame(id) { closeGamePicker(); kv.set('daily-game', id); if (onDaily()) selectGame(id); else location.hash = '#/daily'; }
+function openGamePicker() {
+  const list = $('gpickList'); list.textContent = '';
+  for (const g of GAMES) {
+    const b = el('button', 'gopt' + (g.id === curGame() ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'option'); b.dataset.g = g.id;
+    b.setAttribute('aria-selected', g.id === curGame());
+    const t = el('span'); t.append(g.name, el('small', null, g.sub));
+    b.append(el('span', 'gi', g.icon), t); b.addEventListener('click', () => chooseGame(g.id)); list.append(b);
+  }
+  const more = el('button', 'gopt'); more.type = 'button'; more.disabled = true; const mt = el('span'); mt.append('More soon', el('small', null, 'New daily games'));
+  more.append(el('span', 'gi', '✨'), mt); list.append(more);
+  const r = $('dailyTab').getBoundingClientRect(), pk = $('gpick');
+  pk.style.left = Math.max(8, Math.min(innerWidth - 208, r.left + r.width / 2 - 100)) + 'px';
+  pk.style.bottom = (innerHeight - r.top + 8) + 'px';
+  pk.classList.add('on'); $('gpickBg').classList.add('on');
+  const cur = list.querySelector('.gopt.on'); if (cur) { cur.scrollIntoView({ block: 'nearest' }); cur.focus({ preventScroll: true }); }
+}
+function closeGamePicker() { $('gpick').classList.remove('on'); $('gpickBg').classList.remove('on'); }
+const pickerOpen = () => $('gpick').classList.contains('on');
+$('gpickBg').addEventListener('click', closeGamePicker);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickerOpen()) closeGamePicker(); });
+// Daily tab: first tap opens the last game; tapping it again (or long-press) opens the picker; swipe up/down cycles.
+(() => {
+  const tab = $('dailyTab'); let t0 = null, y0 = 0, lp = null, suppress = false;
+  tab.addEventListener('pointerdown', e => { t0 = Date.now(); y0 = e.clientY; suppress = false; clearTimeout(lp); lp = setTimeout(() => { suppress = true; openGamePicker(); }, 450); });
+  tab.addEventListener('pointermove', e => { if (t0 && Math.abs(e.clientY - y0) > 10) clearTimeout(lp); });
+  const end = e => {
+    clearTimeout(lp); if (!t0) return; t0 = null;
+    const dy = e.clientY - y0;
+    if (Math.abs(dy) > 24 && !pickerOpen()) { suppress = true; const i = GAMES.findIndex(g => g.id === curGame()); chooseGame(GAMES[(i + (dy < 0 ? 1 : GAMES.length - 1)) % GAMES.length].id); }
+  };
+  tab.addEventListener('pointerup', end); tab.addEventListener('pointercancel', () => { clearTimeout(lp); t0 = null; });
+  tab.addEventListener('contextmenu', e => e.preventDefault());
+  tab.addEventListener('click', e => {
+    if (suppress) { e.preventDefault(); suppress = false; return; }
+    if (onDaily()) { e.preventDefault(); pickerOpen() ? closeGamePicker() : openGamePicker(); }
+    else closeGamePicker();
+  });
+})();
+renderDailyTab();
 $('flShare').addEventListener('click', () => openPicker(flappyCard()));
 window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.type === 'offsuit-stats' && e.data.game === 'flappy') setTimeout(renderFlBar, 0); });
 function openPicker(card) {
@@ -255,5 +303,5 @@ $('meSave').addEventListener('click', () => { const nm = cleanName($('meName').v
 $('meClear').addEventListener('click', async () => { if (!confirm('Delete the saved chat history on this device?')) return; for (const r of rooms.roomList()) await history.clear(r.code); renderMe(); toast('History cleared'); });
 
 // test/debug hooks (read-only)
-window.offsuitApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), flappy: () => flappy.state(), flappyStats, flappyLoaded: () => flappy.loaded(), room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
+window.offsuitApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), flappy: () => flappy.state(), flappyStats, flappyLoaded: () => flappy.loaded(), game: curGame, room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
 route();

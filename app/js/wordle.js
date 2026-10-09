@@ -58,7 +58,7 @@ export function resultCard(g = todayGame()) {
 /** Mount the playable board into `el`. opts.onShare(card), opts.toast(msg) */
 export function mountWordle(el, { onShare, toast }) {
   el.innerHTML = `
-    <div class="wl-head"><div><b>Daily</b> <span class="muted" id="wlNo"></span></div><button class="chip" id="wlStatsBtn" type="button">Stats</button></div>
+    <div class="ghead"><div class="gt"><b>Wordle</b> <span class="muted" id="wlNo"></span></div><button class="chip" id="wlStatsBtn" type="button">Stats</button></div>
     <div class="wl-board"><div class="wl-grid" id="wlGrid"></div></div>
     <div class="wl-kb" id="wlKb"></div>
     <div class="sheet-bg" id="wlModal"><div class="sheet" role="dialog" aria-labelledby="wlTitle">
@@ -74,8 +74,10 @@ export function mountWordle(el, { onShare, toast }) {
   const rows = [];
   for (let r = 0; r < ROWS; r++) { const row = document.createElement('div'); row.className = 'wl-row'; for (let c = 0; c < COLS; c++) { const t = document.createElement('div'); t.className = 'wl-tile'; row.appendChild(t); } $('wlGrid').appendChild(row); rows.push(row); }
   const keyEls = {};
-  ['qwertyuiop', 'asdfghjkl', '+zxcvbnm-'].forEach(r => {
+  ['qwertyuiop', 'asdfghjkl', '+zxcvbnm-'].forEach((r, ri) => {
     const kr = document.createElement('div'); kr.className = 'wl-kr';
+    const half = () => { const sp = document.createElement('div'); sp.className = 'wl-half'; kr.appendChild(sp); };
+    if (ri === 1) half(); // middle row is inset by half a key on each side, like a real keyboard
     for (const ch of r) {
       const k = document.createElement('button'); k.type = 'button'; k.className = 'wl-key';
       if (ch === '+') { k.textContent = 'Enter'; k.classList.add('wide'); k.dataset.key = 'Enter'; }
@@ -83,6 +85,7 @@ export function mountWordle(el, { onShare, toast }) {
       else { k.textContent = ch; k.dataset.key = ch; keyEls[ch] = k; }
       kr.appendChild(k);
     }
+    if (ri === 1) half();
     $('wlKb').appendChild(kr);
   });
   $('wlKb').addEventListener('click', e => { const k = e.target.closest('.wl-key'); if (k) { press(k.dataset.key); k.blur(); } });
