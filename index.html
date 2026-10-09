@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#000;--panel:#171717;--border:#262626;--text:#fff;--muted:#8A8A8A;--accent:#FFFF7D}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:0 auto;height:100%;display:flex;flex-direction:column;padding:16px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 2px 14px}
+  .brand{font-weight:600;letter-spacing:-.01em}
+  .brand span{color:var(--accent)}
+  .status{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555}
+  .dot.on{background:var(--accent)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px}
+  #join{margin:auto;width:100%;max-width:380px;padding:24px}
+  #join h1{font-size:20px;margin:0 0 6px;font-weight:600}
+  #join p{color:var(--muted);margin:0 0 18px;font-size:14px}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+  input{width:100%;background:#000;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font:inherit;outline:none}
+  input:focus{border-color:var(--accent)}
+  button{background:var(--accent);color:#000;border:0;border-radius:8px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .field{margin-bottom:14px}
+  #join button{width:100%}
+  .err{color:#ff8a8a;font-size:13px;min-height:18px;margin-top:8px}
+  #chat{display:none;flex:1;min-height:0;flex-direction:column}
+  #messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:80%;align-self:flex-start}
+  .msg.me{align-self:flex-end;text-align:right}
+  .meta{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .meta b{color:var(--text);font-weight:500}
+  .msg.me .meta b{color:var(--accent)}
+  .bubble{display:inline-block;text-align:left;background:#000;border:1px solid var(--border);border-radius:10px;padding:8px 12px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+  .sys{align-self:center;color:var(--muted);font-size:12px}
+  form#send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+  .room{color:var(--muted);font-size:12px;padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .room code{color:var(--text)}
+  .link{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;font-weight:500;font-size:12px}
+  .link:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Chat<span>.</span></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">offline</span></div>
+  </header>
+
+  <div id="join" class="panel">
+    <h1>Join the chat</h1>
+    <p>Enter your name to start talking. Share this page's link so others join the same room.</p>
+    <form id="joinForm">
+      <div class="field"><label for="name">Your name</label><input id="name" maxlength="32" autocomplete="nickname" placeholder="e.g. Minh" required></div>
+      <div class="field"><label for="roomIn">Room</label><input id="roomIn" maxlength="40" placeholder="lobby"></div>
+      <button id="joinBtn" type="submit">Join</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+
+  <div id="chat" class="panel">
+    <div class="room"><span>Room <code id="roomName"></code> · you are <code id="meName"></code></span><span><button class="link" id="copy" type="button">Copy invite link</button> <button class="link" id="leave" type="button">Leave</button></span></div>
+    <div id="messages" aria-live="polite"></div>
+    <form id="send"><input id="text" maxlength="1000" autocomplete="off" placeholder="Type a message…"><button type="submit">Send</button></form>
+  </div>
+</div>
+
+<script>
+(() => {
+  // Realtime relay: ntfy.sh public pub/sub (free, no account, HTTPS on port 443).
+  const RELAY = 'https://ntfy.sh';
+  const APP = 'offsuit-rtchat-7f3k9q';
+  const $ = id => document.getElementById(id);
+  const clean = s => (s || '').trim().replace(/\s+/g, ' ');
+  const slug = s => clean(s).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'lobby';
+  const myId = Math.random().toString(36).slice(2, 10);
+  const seen = new Set();
+  let es, name, room, topic;
+
+  const hashRoom = new URLSearchParams(location.hash.slice(1)).get('room');
+  $('roomIn').value = hashRoom || 'lobby';
+  $('name').value = localStorage.getItem('chat-name') || '';
+  if (!$('name').value) $('name').focus();
+
+  function setStatus(on, text) { $('dot').classList.toggle('on', on); $('statusText').textContent = text; }
+  function fmt(ts) {
+    const d = new Date(ts), now = new Date();
+    const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + t;
+  }
+  function addSys(t) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = t; push(d); }
+  function push(el) { const m = $('messages'); const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 80; m.appendChild(el); if (atBottom || el.classList.contains('me')) m.scrollTop = m.scrollHeight; }
+  function addMsg(p) {
+    const d = document.createElement('div'); d.className = 'msg' + (p.id === myId ? ' me' : '');
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const b = document.createElement('b'); b.textContent = p.name; meta.append(b, ' · ' + fmt(p.ts));
+    const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = p.text;
+    d.append(meta, bub); push(d);
+  }
+
+  function connect() {
+    setStatus(false, 'connecting…');
+    // since=12h shows the relay's recent cache (ntfy keeps ~12h) so late joiners see recent messages
+    es = new EventSource(RELAY + '/' + topic + '/sse?since=12h');
+    es.onopen = () => setStatus(true, 'live');
+    es.onerror = () => setStatus(false, es.readyState === 2 ? 'offline' : 'reconnecting…');
+    es.addEventListener('message', ev => {
+      let n, p; try { n = JSON.parse(ev.data); p = JSON.parse(n.message); } catch { return; }
+      if (!n || seen.has(n.id) || !p || typeof p !== 'object') return;
+      seen.add(n.id);
+      const who = String(p.name || '?').slice(0, 32);
+      if (p.t === 'join') { if (p.id !== myId) addSys(who + ' joined · ' + fmt(p.ts || n.time * 1000)); return; }
+      if (typeof p.text !== 'string') return;
+      addMsg({ id: p.id, name: who, text: p.text.slice(0, 1000), ts: Number(p.ts) || n.time * 1000 });
+    });
+  }
+
+  async function publish(obj) {
+    const r = await fetch(RELAY + '/', { method: 'POST', body: JSON.stringify({ topic, message: JSON.stringify(obj) }) });
+    if (!r.ok) throw new Error(r.status === 429 ? 'Rate limited by the free relay — wait a moment.' : 'Send failed (' + r.status + ')');
+  }
+
+  $('joinForm').addEventListener('submit', e => {
+    e.preventDefault();
+    name = clean($('name').value).slice(0, 32);
+    if (!name) { $('err').textContent = 'Please enter your name.'; return; }
+    localStorage.setItem('chat-name', name);
+    room = slug($('roomIn').value);
+    topic = APP + '-' + room;
+    history.replaceState(null, '', '#room=' + encodeURIComponent(room));
+    $('roomName').textContent = room; $('meName').textContent = name;
+    $('join').style.display = 'none'; $('chat').style.display = 'flex';
+    addSys('You joined as ' + name + '. Messages from the last ~12h are shown; nothing is stored long-term.');
+    connect(); $('text').focus();
+    publish({ t: 'join', id: myId, name, ts: Date.now() }).catch(() => {});
+  });
+
+  $('send').addEventListener('submit', async e => {
+    e.preventDefault();
+    const text = $('text').value.trim();
+    if (!text) return;
+    $('text').value = '';
+    try { await publish({ id: myId, name, text, ts: Date.now() }); }
+    catch (err) { $('text').value = text; addSys(err.message); }
+  });
+
+  $('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(location.href); $('copy').textContent = 'Copied!'; } catch { prompt('Copy this link:', location.href); }
+    setTimeout(() => $('copy').textContent = 'Copy invite link', 1500);
+  });
+  $('leave').addEventListener('click', () => { if (es) es.close(); location.reload(); });
+})();
+</script>
+</body>
+</html>
