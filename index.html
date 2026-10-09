@@ -183,6 +183,7 @@
   const seen = new Set();
   const enc = new TextEncoder(), dec = new TextDecoder();
   const historyIds = new Set();
+  let createdAt = 0;
   let es, name, room, topic, key, joinedAt = 0, unread = 0, panelUnread = 0, audioCtx, heartbeat, isPublic = true;
   const BASE_TITLE = document.title;
   let notifyOn = localStorage.getItem('chat-notify') !== 'off';
@@ -431,6 +432,11 @@
       seen.add(n.id);
       const p = await open(n.message);
       if (myEs !== es) return; // left the room meanwhile
+      // Safety net: we just "created" this room, but a message under a different code shows up from
+      // before/around our creation (relay was slow to show it) -> the room already existed: reject.
+      if (p === false && createdAt && n.time * 1000 < createdAt + 5000 && Date.now() - createdAt < 20000) {
+        leaveRoom(); $('err').textContent = 'Wrong room code.'; $('code').focus(); return;
+      }
       if (!p || typeof p !== 'object') return; // not decryptable with this room code -> ignore
       saveMyRoom(room, { seen: Date.now() });
       if (p.pub === false && isPublic) { isPublic = false; clearInterval(heartbeat); saveMyRoom(room, { public: false }); }
@@ -457,7 +463,10 @@
   async function checkCode(k) {
     let res = await checkCodeOnce(k);
     // the relay can take a moment to make brand-new messages visible; double-check before declaring a room new
-    if (res.state === 'new') { await new Promise(r => setTimeout(r, 1500)); res = await checkCodeOnce(k); }
+    for (const wait of [1500, 2500]) {
+      if (res.state !== 'new') break;
+      await new Promise(r => setTimeout(r, wait)); res = await checkCodeOnce(k);
+    }
     return res;
   }
   async function checkCodeOnce(k) {
@@ -480,7 +489,7 @@
     if (es) { es.close(); es = null; }
     clearInterval(heartbeat);
     if (room && key) saveMyRoom(room, { seen: Date.now() });
-    key = null; topic = null; seen.clear(); historyIds.clear();
+    key = null; topic = null; createdAt = 0; seen.clear(); historyIds.clear();
     unread = 0; panelUnread = 0; updateTitle(); renderToggle();
     $('messages').textContent = '';
     $('roomsPane').classList.remove('on');
@@ -508,7 +517,7 @@
       topic = t;
       const { state, pub } = await checkCode(k);
       if (state === 'wrong') { topic = null; $('err').textContent = 'Wrong room code.'; $('code').value = ''; $('code').focus(); return; }
-      name = newName; room = r; key = k; joinedAt = Date.now(); isPublic = $('listPublic').checked && pub !== false; renderBell();
+      name = newName; room = r; key = k; joinedAt = Date.now(); createdAt = state === 'new' ? joinedAt : 0; isPublic = $('listPublic').checked && pub !== false; renderBell();
       localStorage.setItem('chat-name', name);
       saveMyRoom(room, { joined: Date.now(), seen: Date.now(), public: isPublic });
       history.replaceState(null, '', '#room=' + encodeURIComponent(room));
