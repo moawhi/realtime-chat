@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Flappy · ChatHouse</title>
+<style>
+  @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("../fonts/inter-latin.woff2") format("woff2")}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:#000;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  #share{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;background:#171717;color:#fff;border:1px solid #FFFF7D;border-radius:10px;padding:11px 16px;font:600 14px Inter,system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+  #share.on{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="share" type="button">💬 Share to room</button>
+<script>
+(() => {
+  "use strict";
+  const C = { bg: '#000', panel: '#171717', border: '#262626', text: '#FFFFFF', muted: '#8A8A8A', accent: '#FFFF7D', soft: '#B5CBE3' };
+  const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  // v2 rules. World is 640 units tall; the playfield is scaled by height and its width is capped,
+  // so wide/landscape screens don't see further ahead (no easier there).
+  const WH = 640, GROUND = 70, BIRD_X_FR = 0.3, R = 15, MAX_W = 420;
+  const GRAV = 1650, FLAP = -445, PIPE_W = 64, SPACING = 220;
+  // Difficulty by score: every 10 points is a new level.
+  function diffAt(sc) {
+    const lv = Math.floor(Math.max(0, sc) / 10);
+    return {
+      level: lv,
+      speed: Math.min(245, 185 + 12 * lv),            // pipe speed (world units/s): 185 → 245 max (level 6+)
+      gap: Math.max(124, 150 - 6 * lv),                // gap height: 150 → 124 min (level 6+, bird is 30 tall)
+      swing: Math.min(160, 110 + 25 * lv),             // max height change between consecutive gaps: 110 → 160
+      move: lv >= 3 ? Math.min(26, 14 + 4 * (lv - 3)) : 0, // from 30 points: about half the gaps drift up/down by ±14 → ±26
+    };
+  }
+  let W = 360, OX = 0, scale = 1, dpr = 1, SPEED = 185;
+  const KEY = k => 'flappy2-' + k; // v2 storage; the old 'flappy-best' is kept as the classic best
+  const classicBest = +(localStorage.getItem('flappy-best') || 0);
+  let state = 'ready', bird, pipes, score, best = +(localStorage.getItem(KEY('best')) || 0), t = 0, overAt = 0, groundX = 0, last = 0, flashA = 0, newBest = false, debugRun = false;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const w = window.innerWidth, h = window.innerHeight;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    scale = h / WH; const full = w / scale; W = Math.min(full, MAX_W); OX = (full - W) / 2;
+  }
+  window.addEventListener('resize', resize); resize();
+
+  function reset() {
+    bird = { x: W * BIRD_X_FR, y: WH * 0.42, vy: 0, rot: 0 };
+    pipes = []; score = 0; newBest = false; debugRun = false; SPEED = diffAt(0).speed;
+  }
+  reset();
+  function addPipe(x) {
+    const d = diffAt(score), gap = d.gap, amp = d.move && Math.random() < 0.5 ? d.move : 0;
+    const minTop = 60 + amp, maxTop = WH - GROUND - gap - 60 - amp;
+    const prev = pipes[pipes.length - 1];
+    let lo = minTop, hi = maxTop;
+    if (prev) { const c = prev.base; lo = Math.max(minTop, c - d.swing); hi = Math.min(maxTop, c + d.swing); }
+    const base = lo + Math.random() * Math.max(0, hi - lo);
+    pipes.push({ x, base, top: base, gap, amp, ph: Math.random() * Math.PI * 2, passed: false });
+  }
+  function flap() {
+    if (state === 'ready') { state = 'play'; reset(); addPipe(W + 60); }
+    if (state === 'paused') { state = 'play'; last = performance.now(); }
+    if (state === 'play') { bird.vy = FLAP; return; }
+    if (state === 'over' && performance.now() - overAt > 600) { state = 'ready'; reset(); }
+  }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); flap(); });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) flap(); }
+    if (e.code === 'KeyP' || e.code === 'Escape') pause();
+  });
+  ['touchstart', 'touchmove', 'gesturestart'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+  function pause() { if (state === 'play') state = 'paused'; }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  window.addEventListener('blur', pause);
+  window.addEventListener('message', e => { if (e.data && e.data.type === 'pause') pause(); });
+
+  const embedded = window.parent !== window;
+  const shareBtn = document.getElementById('share');
+  shareBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  shareBtn.addEventListener('click', () => { try { parent.postMessage({ type: 'chathouse-share', game: 'flappy' }, location.origin); } catch {} shareBtn.textContent = 'Shared ✓'; setTimeout(() => shareBtn.textContent = '💬 Share to room', 1500); });
+  function die() {
+    if (state !== 'play') return;
+    state = 'over'; overAt = performance.now(); flashA = 0.6;
+    if (debugRun) return; // debug-hook runs never count
+    if (score > best) { best = score; newBest = true; try { localStorage.setItem(KEY('best'), best); } catch {} }
+    try { localStorage.setItem(KEY('last'), score); localStorage.setItem(KEY('games'), (+localStorage.getItem(KEY('games')) || 0) + 1); } catch {}
+    if (embedded) try { parent.postMessage({ type: 'chathouse-stats', game: 'flappy', newBest }, location.origin); } catch {}
+  }
+
+  function update(dt) {
+    t += dt;
+    if (state !== 'paused' && state !== 'over') groundX = (groundX - SPEED * dt) % 24;
+    if (state === 'ready') { bird.x = W * BIRD_X_FR; bird.y = WH * 0.42 + Math.sin(t * 3) * 8; bird.rot = 0; return; }
+    if (state === 'paused') return;
+    if (state === 'over') { // fall to the ground
+      if (bird.y < WH - GROUND - R) { bird.vy += GRAV * dt; bird.y = Math.min(WH - GROUND - R, bird.y + bird.vy * dt); bird.rot = Math.min(1.4, bird.rot + 4 * dt); }
+      return;
+    }
+    SPEED = diffAt(score).speed;
+    bird.vy += GRAV * dt; bird.y += bird.vy * dt;
+    bird.rot = Math.max(-0.45, Math.min(1.3, bird.vy / 600));
+    if (bird.y < R) { bird.y = R; bird.vy = 0; }
+    for (const p of pipes) {
+      p.x -= SPEED * dt;
+      if (p.amp) p.top = p.base + Math.sin(t * 1.1 + p.ph) * p.amp;
+      if (!p.passed && p.x + PIPE_W < bird.x - R) { p.passed = true; score++; }
+      const hitX = bird.x + R * 0.8 > p.x && bird.x - R * 0.8 < p.x + PIPE_W;
+      if (hitX && (bird.y - R * 0.8 < p.top || bird.y + R * 0.8 > p.top + p.gap)) die();
+    }
+    if (pipes.length && pipes[0].x < -PIPE_W - 10) pipes.shift();
+    const lastP = pipes[pipes.length - 1];
+    if (!lastP || lastP.x < W - SPACING) addPipe((lastP ? lastP.x : W) + SPACING);
+    if (bird.y + R >= WH - GROUND) { bird.y = WH - GROUND - R; die(); }
+  }
+
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function text(s, x, y, size, color, weight = 700, align = 'center') { ctx.font = weight + ' ' + size + 'px ' + FONT; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); }
+
+  function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * scale * OX, 0);
+    if (OX > 1) { ctx.fillStyle = C.border; ctx.fillRect(-1, 0, 1, WH); ctx.fillRect(W, 0, 1, WH); }
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, WH); ctx.clip();
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, WH);
+    // faint stars / dots for depth
+    ctx.fillStyle = '#121212';
+    for (let i = 0; i < 40; i++) { const sx = ((i * 97 + (t * 12)) % (W + 40)); ctx.fillRect(W - sx, (i * 53) % (WH - GROUND - 40) + 10, 2, 2); }
+    // pipes
+    for (const p of pipes) {
+      for (const [y, h, capY] of [[-10, p.top + 10, p.top - 18], [p.top + p.gap, WH - GROUND - p.top - p.gap, p.top + p.gap]]) {
+        rr(p.x, y, PIPE_W, h, 8); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = C.border; ctx.lineWidth = 2; ctx.stroke();
+        rr(p.x - 5, capY, PIPE_W + 10, 18, 6); ctx.fillStyle = '#1f1f1f'; ctx.fill(); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+    }
+    // ground
+    ctx.fillStyle = '#0d0d0d'; ctx.fillRect(0, WH - GROUND, W, GROUND);
+    ctx.fillStyle = C.border; ctx.fillRect(0, WH - GROUND, W, 2);
+    ctx.fillStyle = '#161616'; for (let x = groundX; x < W; x += 24) ctx.fillRect(x, WH - GROUND + 12, 12, 4);
+    // bird: round accent body, wing, eye, beak
+    ctx.save(); ctx.translate(bird.x, bird.y); ctx.rotate(bird.rot);
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fillStyle = C.accent; ctx.fill();
+    const flapUp = state === 'play' && bird.vy < 0 || state === 'ready' && Math.sin(t * 12) > 0;
+    ctx.beginPath(); ctx.ellipse(-5, flapUp ? -3 : 4, 8, 5, flapUp ? -0.5 : 0.4, 0, Math.PI * 2); ctx.fillStyle = '#E6E66A'; ctx.fill();
+    ctx.beginPath(); ctx.arc(6, -5, 5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.beginPath(); ctx.arc(7.5, -5, 2.3, 0, Math.PI * 2); ctx.fillStyle = '#000'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(22, 3); ctx.lineTo(12, 7); ctx.closePath(); ctx.fillStyle = C.soft; ctx.fill();
+    ctx.restore();
+    // HUD
+    if (state === 'play' || state === 'paused') { text(String(score), W / 2, 70, 52, C.text, 800); const lv = diffAt(score).level; if (lv) text('Level ' + (lv + 1), W / 2, 108, 12, C.muted, 600); }
+    if (state === 'ready') {
+      text('Flappy', W / 2 - 18, 120, 40, C.text, 800); text('.', W / 2 + 52, 120, 40, C.accent, 800);
+      rr(W / 2 + 66, 106, 30, 20, 6); ctx.fillStyle = C.accent; ctx.fill(); text('v2', W / 2 + 81, 116.5, 12, '#000', 800);
+      text('Harder: faster, tighter, speeds up every 10', W / 2, 160, 13, C.muted, 500);
+      text('Tap, click or Space to flap', W / 2, WH * 0.62, 16, C.muted, 500);
+      text('Best ' + best, W / 2, WH * 0.62 + 28, 14, C.accent, 600);
+      if (classicBest) text('Classic best ' + classicBest + ' (easier rules)', W / 2, WH * 0.62 + 50, 12, C.muted, 500);
+    }
+    if (state === 'paused') { text('Paused', W / 2, WH * 0.4, 28, C.text, 800); text('Tap to continue', W / 2, WH * 0.4 + 34, 15, C.muted, 500); }
+    if (state === 'over') {
+      const cw = Math.min(260, W - 40), ch = 170, cx = W / 2 - cw / 2, cy = WH * 0.28;
+      rr(cx, cy, cw, ch, 16); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = C.border; ctx.lineWidth = 1.5; ctx.stroke();
+      text('Game over', W / 2, cy + 30, 22, C.text, 800);
+      text('Score', W / 2 - cw / 4, cy + 66, 12, C.muted, 600); text(String(score), W / 2 - cw / 4, cy + 96, 32, C.text, 800);
+      text('Best', W / 2 + cw / 4, cy + 66, 12, C.muted, 600); text(String(best), W / 2 + cw / 4, cy + 96, 32, C.accent, 800);
+      if (newBest) text('New best!', W / 2, cy + 132, 13, C.accent, 700);
+      else text('v2 · level ' + (diffAt(score).level + 1), W / 2, cy + 132, 12, C.muted, 600);
+      if (performance.now() - overAt > 600) text('Tap to play again', W / 2, cy + ch + 28, 15, C.muted, 500);
+    }
+    if (flashA > 0) { ctx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; ctx.fillRect(0, 0, W, WH); }
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.033, Math.max(0, (now - (last || now)) / 1000)); last = now;
+    update(dt); flashA = Math.max(0, flashA - dt * 2.5); draw();
+    shareBtn.classList.toggle('on', embedded && (state === 'over' && now - overAt > 600 || state === 'ready' && best > 0));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  // read-only hook for automated tests
+  window.flappyState = () => {
+    const next = pipes.find(p => p.x + PIPE_W > bird.x - R);
+    const d = diffAt(score);
+    return { v: 2, state, score, best, classicBest, y: Math.round(bird.y), vy: Math.round(bird.vy), pipes: pipes.length, gapTop: next ? Math.round(next.top) : null, gap: next ? next.gap : d.gap, nextX: next ? Math.round(next.x - bird.x) : null,
+      level: d.level, speed: SPEED, nextGap: d.gap, swing: d.swing, move: d.move, moving: pipes.filter(p => p.amp).length, viewW: Math.round(W) };
+  };
+  window.flappyDiff = diffAt;
+  // debug hook (only with #debug in this frame's URL): jump the score to test difficulty; such runs are never saved
+  window.flappyDebug = { setScore(n) { if (!/debug/.test(location.hash) || state !== 'play') return false; score = Math.max(0, n | 0); debugRun = true; return true; } };
+})();
+</script>
+</body>
+</html>

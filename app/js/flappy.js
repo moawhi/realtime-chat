@@ -1,5 +1,6 @@
 // ---- Games: Flappy v2 (daily best) ----------------------------------------------
-// Reuses the main site's /flappy.html (v2 rules, v2 best in 'flappy2-*', pauses when hidden) in a frame,
+// Uses the app's own copy of Flappy v2 (app/flappy.html: same rules and look as the main site's, v2 best in
+// 'flappy2-*', pauses when hidden) in a frame,
 // loaded only when first selected. This module adds a per-device daily best that resets each Sydney day.
 import { kv } from './storage.js';
 import { sydDate } from './wordle.js';
@@ -27,7 +28,7 @@ export function mountFlappy(el, { onShare }) {
   function ensure() {
     if (frame) return;
     frame = document.createElement('iframe');
-    frame.src = '../flappy.html'; frame.title = 'Flappy'; frame.className = 'fl-frame';
+    frame.src = 'flappy.html'; frame.title = 'Flappy'; frame.className = 'fl-frame';
     el.appendChild(frame);
     // flappy.html blocks touch "click"s page-wide (to stop scrolling), which also swallows taps on its
     // Share button on phones. Same origin, so route a tap on that button to a click from here.
@@ -40,8 +41,8 @@ export function mountFlappy(el, { onShare }) {
   }
   window.addEventListener('message', e => {
     if (!frame || e.source !== frame.contentWindow || e.origin !== location.origin || !e.data) return;
-    if (e.data.type === 'offsuit-stats' && e.data.game === 'flappy') { const g = allTime().games; if (g !== lastGames) { lastGames = g; recordRun(); } }
-    if (e.data.type === 'offsuit-share' && e.data.game === 'flappy') onShare(flappyCard());
+    if (e.data.type === 'chathouse-stats' && e.data.game === 'flappy') { const g = allTime().games; if (g !== lastGames) { lastGames = g; recordRun(); } }
+    if (e.data.type === 'chathouse-share' && e.data.game === 'flappy') onShare(flappyCard());
   });
   const pause = () => { if (frame) try { frame.contentWindow.postMessage({ type: 'pause' }, location.origin); } catch {} };
   return {

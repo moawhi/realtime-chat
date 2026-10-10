@@ -23,8 +23,8 @@ function toast(text, action, ms = 3500) {
 const hideToast = () => $('toast').classList.remove('on');
 async function copy(text) { try { await navigator.clipboard.writeText(text); return true; } catch { prompt('Copy this:', text); return false; } }
 async function shareInvite(code, title) {
-  const url = rooms.joinLink(code), text = 'Join my room "' + title + '" on Offsuit. Code: ' + code;
-  if (navigator.share) { try { await navigator.share({ title: 'Offsuit room', text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  const url = rooms.joinLink(code), text = 'Join my room "' + title + '" on ChatHouse. Code: ' + code;
+  if (navigator.share) { try { await navigator.share({ title: 'ChatHouse room', text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
   await copy(text + '\n' + url); toast('Invite link copied');
 }
 function setStatus(s) {
@@ -270,7 +270,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickerOpen
 })();
 renderDailyTab();
 $('flShare').addEventListener('click', () => openPicker(flappyCard()));
-window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.type === 'offsuit-stats' && e.data.game === 'flappy') setTimeout(renderFlBar, 0); });
+window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.type === 'chathouse-stats' && e.data.game === 'flappy') setTimeout(renderFlBar, 0); });
 function openPicker(card) {
   $('pkErr').textContent = '';
   const prev = $('pkPrev'); prev.textContent = ''; prev.append(renderCard(card));
@@ -303,5 +303,5 @@ $('meSave').addEventListener('click', () => { const nm = cleanName($('meName').v
 $('meClear').addEventListener('click', async () => { if (!confirm('Delete the saved chat history on this device?')) return; for (const r of rooms.roomList()) await history.clear(r.code); renderMe(); toast('History cleared'); });
 
 // test/debug hooks (read-only)
-window.offsuitApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), flappy: () => flappy.state(), flappyStats, flappyLoaded: () => flappy.loaded(), game: curGame, room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
+window.chathouseApp = { profile: () => profile, stats: statsView, wordle: () => wordle.state(), flappy: () => flappy.state(), flappyStats, flappyLoaded: () => flappy.loaded(), game: curGame, room: () => connCode && conn ? { code: connCode, meta: conn.meta } : null };
 route();
