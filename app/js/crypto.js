@@ -2,7 +2,9 @@
 // The short room code is the room key: topic and AES-GCM key are both derived from it in the browser.
 // The relay only sees a hashed topic and ciphertext.
 const enc = new TextEncoder(), dec = new TextDecoder();
-const APP = 'chathouse-rtchat-7f3k9q';
+// Legacy protocol constants (topic namespace + key salt below), kept unchanged for compatibility so
+// rooms created before the ChatHouse rename still connect. Not user-visible branding.
+const APP = 'offsuit-rtchat-7f3k9q';
 const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -10,7 +12,7 @@ const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, 
 export async function roomTopic(code) { return APP + '-app-' + hex(await crypto.subtle.digest('SHA-256', enc.encode('approom/v1/' + code))).slice(0, 32); }
 export async function roomKey(code) {
   const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('chathouse-app/v1/' + code), iterations: 100000, hash: 'SHA-256' },
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('offsuit-app/v1/' + code), iterations: 100000, hash: 'SHA-256' },
     base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 export async function seal(key, obj) {
